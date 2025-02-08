@@ -37,5 +37,4 @@ void test_tiled_row_major() {
 TEST(TestTiledMatrixLayout, test_row_major) {
     test_tiled_row_major<tl::RowMajor<32, 32>, TileShape<16, 16>>();
 }
-
 }  // namespace tilefusion::testing
