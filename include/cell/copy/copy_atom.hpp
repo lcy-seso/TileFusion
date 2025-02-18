@@ -22,11 +22,8 @@ template <const int kBytes>
 DEVICE void ld_global_st_shared(uint32_t dst, void const* src) {
     static_assert(kBytes == 4 || kBytes == 8 || kBytes == 16);
 
-#if (__CUDA_ARCH__ >= 900)
-    // SM90, hopper
-    assert(false && "Not implemented yet.");
-#elif (__CUDA_ARCH__ >= 800)
-    // SM80, SM86, ampere
+#if (__CUDA_ARCH__ >= 800)
+    // SM90, hopper, SM80, SM86, ampere
     // TODO(ying): add a wrapper to allow choosing between different caching
     // policies (e.g. "cache all levels").
     asm volatile("cp.async.cg.shared.global [%0], [%1], %2;\n" ::"r"(dst),
