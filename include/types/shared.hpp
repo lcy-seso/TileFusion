@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "types/base_tile.hpp"
 #include "types/layout.hpp"
 #include "util/print.hpp"
 
@@ -21,15 +20,18 @@ struct SharedTilePrettyPrinter {
         auto swizzled = Shared::kSwizzled ? "swizzled" : "non-swizzled";
         out << "\t" << typename Shared::Layout{} << ", Swizzled = " << swizzled
             << std::endl
-            << "\tBaseShape = " << typename Shared::BaseShape{};
+            << "\t" << typename Shared::BaseShape{};
     }
 };
 
 }  // namespace
 
-/// TODO(ying): move swizzle a composed layout instead of a boolean value.
+/// FIXME(ying): 1. move swizzle a composed layout instead of a boolean value.
+// 2. The default value for `BaseShape_` is a workaround to maintain
+// compatibility with the previous versions of BaseTile. Remove it after all the
+// concepts are unified.
 template <typename Element_, typename Layout_, const bool kSwizzled_ = false,
-          typename BaseShape_ = DefaultBaseTile<Element_, Layout_::kType>>
+          typename BaseShape_ = traits::BaseTileShape<Element_>>
 class SharedTile {
   public:
     using DType = Element_;

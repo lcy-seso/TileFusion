@@ -39,7 +39,12 @@ class STileIterator {
     // to be inaccessible from external environments. Ensure this ambiguity is
     // acceptable.
     using SwizzleBaseShape = traits::SwizzleBaseTileShape<DType>;
-    using BaseShape = typename Tile::BaseShape;
+
+    // FIXME(ying): The concept of `BaseShape` is inconsistent throughout the
+    // current implementations. `BaseShape` should be implemented as commented
+    // out below.
+    using BaseShape = traits::BaseTileShape<DType>;
+    // using BaseShape = typename Tile::BaseShape;
 
     static constexpr int kChunkRows = dim_size<0, ChunkShape>;
     static constexpr int kChunkCols = dim_size<1, ChunkShape>;
@@ -78,7 +83,8 @@ class STileIterator {
                                                  kTileRowStride, kTileColStride,
                                                  Tile::kType>());
 
-        using NewTile = SharedTile<DType, TileLayout, Tile::kSwizzled>;
+        using NewTile =
+            SharedTile<DType, TileLayout, Tile::kSwizzled, BaseShape>;
 
         // TODO(KuangjuX): hotfix for `offset1` and `offset2`.
         int offset1 = x * (kChunkRows * Tile::kRowStride) +

@@ -112,10 +112,16 @@ struct TestTraits {
     /// ======== 1. configure threads and warp layout in a CTA ============
     using WarpLayout = WarpLayout_;
     static constexpr int kThreads = WarpLayout::kNumel * 32;
-    static constexpr int kWarpPerRow = WarpLayout::kRows;
-    static constexpr int kWarpPerCol = WarpLayout::kCols;
 
-    /// == 2. configure tile transfer between global and shared using CuTe ==
+    // FIXME(ying): the concept of `BaseShape` is inconsistent throughout the
+    // current implementations. Resolve this gradually.
+    using BaseShapeReg = traits::BaseTileShape<Element>;
+
+    /// == 2. configure tile transfer between global and shared ==
+
+    /// ========================= Operand A =========================
+    using GlobalA = GlobalTile<Element, tl::RowMajor<kM, kK>>;
+
     static constexpr WarpReuse kModeA = WarpReuse::kRowReuseCont;
     static constexpr int kWarpTileRowsA =
         warp::warp_tile_rows<kM, WarpLayout::kRows, kModeA>();
@@ -123,25 +129,26 @@ struct TestTraits {
         warp::warp_tile_cols<kK, WarpLayout::kCols, kModeA>();
     using BaseShapeA =  // automatically infer the BaseTile shape
         WarpBaseTileShape<Element, TileShape<kWarpTileRowsA, kWarpTileColsA>,
-                          tl::Layout::kRowMajor>;
+                          GlobalA::kType>;
     using SharedA =
         SharedTile<Element, tl::RowMajor<kM, kK>, kSwizzled, BaseShapeA>;
 
-    using GlobalA = GlobalTile<Element, tl::RowMajor<kM, kK>>;
     using LoadSharedA = GlobalToSharedLoader<SharedA, WarpLayout>;
+
+    /// ========================= Operand B =========================
+    using GlobalB = GlobalTile<Element, tl::ColMajor<kK, kN>>;
 
     static constexpr WarpReuse kModeB = WarpReuse::kColReuseCont;
     static constexpr int kWarpTileRowsB =
-        warp::warp_tile_rows<kM, WarpLayout::kRows, kModeB>();
+        warp::warp_tile_rows<kK, WarpLayout::kRows, kModeB>();
     static constexpr int kWarpTileColsB =
-        warp::warp_tile_cols<kK, WarpLayout::kCols, kModeB>();
+        warp::warp_tile_cols<kN, WarpLayout::kCols, kModeB>();
     using BaseShapeB =  // automatically infer the BaseTile shape
         WarpBaseTileShape<Element, TileShape<kWarpTileRowsB, kWarpTileColsB>,
-                          tl::Layout::kColMajor>;
+                          GlobalB::kType>;
     using SharedB =
         SharedTile<Element, tl::ColMajor<kK, kN>, kSwizzled, BaseShapeB>;
 
-    using GlobalB = GlobalTile<Element, tl::ColMajor<kK, kN>>;
     using LoadSharedB = GlobalToSharedLoader<SharedB, WarpLayout>;
 
     /// === 3. configure tile transfer between shared and register loader ===
@@ -154,29 +161,33 @@ struct TestTraits {
                   "mismatched K dimension!");
 
     // register tile for operand A, calculate register usage for operand A
+
     // warp tile shape for the operand A
-    static constexpr int kAMs = kWarpTileRowsA / BaseShapeA::kRows;
-    static constexpr int kAKs = kWarpTileColsA / BaseShapeA::kCols;
+    static constexpr int kAMs = kWarpTileRowsA / BaseShapeReg::kRows;
+    static constexpr int kAKs = kWarpTileColsA / BaseShapeReg::kCols;
     using RegA = RegTile<BaseTileRowMajor<Element>, tl::RowMajor<kAMs, kAKs>>;
-    // load RegTileA from shared
-    using LoadRegA =
-        SharedToRegLoader<RegA, WarpLayout, WarpReuse::kRowReuseCont>;
+    using LoadRegA = SharedToRegLoader<RegA, WarpLayout, kModeA>;
 
     // register tile for operand B, calculate register usage for operand B
-    static constexpr int kBKs = kWarpTileRowsB / BaseShapeB::kRows;
-    static constexpr int kBNs = kWarpTileColsB / BaseShapeB::kCols;
+    static constexpr int kBKs = kWarpTileRowsB / BaseShapeReg::kRows;
+    static constexpr int kBNs = kWarpTileColsB / BaseShapeReg::kCols;
     using RegB = RegTile<BaseTileColMajor<Element>, tl::ColMajor<kBKs, kBNs>>;
     // load RegTileB from shared
-    using LoadRegB =
-        SharedToRegLoader<RegB, WarpLayout, WarpReuse::kColReuseCont>;
+    using LoadRegB = SharedToRegLoader<RegB, WarpLayout, kModeB>;
 
-    // register tile for output C
+    /// register tile for output C
     // calculate register usage for output C
-    static constexpr int kCMs = kM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kCNs = kN / kWarpPerCol / BaseShape::kCols;
-
+    /// ========================= Operand C =========================
+    static constexpr WarpReuse kModeC = WarpReuse::kCont;
+    static constexpr int kWarpTileRowsC =
+        warp::warp_tile_rows<kM, WarpLayout::kRows, kModeC>();
+    static constexpr int kWarpTileColsC =
+        warp::warp_tile_cols<kN, WarpLayout::kCols, kModeC>();
+    static constexpr int kCMs = kWarpTileRowsC / BaseShapeReg::kRows;
+    static constexpr int kCNs = kWarpTileColsC / BaseShapeReg::kCols;
     using RegC =
         RegTile<BaseTileRowMajor<ElementAcc>, tl::RowMajor<kCMs, kCNs>>;
+
     using GlobalC = GlobalTile<ElementAcc, tl::RowMajor<kM, kN>>;
     using CStorer = copy::RegToGlobalStorer<GlobalC, RegC, WarpLayout>;
 };
@@ -270,9 +281,10 @@ void run_test() {
     using config = TestTraits<Element, ElementAcc, kM, kN, kK, WarpLayout,
                               kChunkK, kSwizzled>;
 
-    LOG(INFO) << "[" << kM << ", " << kN << ", " << kK << "], warps: ["
-              << config::kWarpPerRow << ", " << config::kWarpPerCol
-              << "], k_chunk_size: " << kChunkK
+    LOG(INFO) << std::endl
+              << "[" << kM << ", " << kN << ", " << kK
+              << "], WarpLayout:" << WarpLayout{}
+              << ", k_chunk_size: " << kChunkK
               << ", kThreads: " << config::kThreads;
 
     using RegA = typename config::RegA;
@@ -282,13 +294,12 @@ void run_test() {
     using IteratorA = typename config::TileIteratorA;
     using IteratorB = typename config::TileIteratorB;
 
-#if defined(DEBUG)
-    LOG(INFO) << "TileIteratorA: " << IteratorA{} << std::endl
+    LOG(INFO) << std::endl
+              << "TileIteratorA: " << IteratorA{} << std::endl
               << "TileIteratorB: " << IteratorB{} << std::endl
               << "RegA: " << RegA{} << std::endl
               << "RegB: " << RegB{} << std::endl
               << "RegC: " << RegC{} << std::endl;
-#endif
 
     dim3 dim_grid(1, 1, 1);
     dim3 dim_block(config::kThreads, 1, 1);
@@ -337,6 +348,7 @@ TEST(TestGemm, test) {
 
     // 1 warp
     run_test<16, 16, 64, tl::RowMajor<1, 1>, 64, true>();  // minimal shape
+
     run_test<32, 16, 64, tl::RowMajor<1, 1>, 64, true>();
     run_test<16, 32, 64, tl::RowMajor<1, 1>, 64, true>();
     run_test<32, 32, 64, tl::RowMajor<1, 1>, 64, true>();
@@ -350,6 +362,7 @@ TEST(TestGemm, test) {
 
     // 1 x 2 warps
     run_test<32, 128, 128, tl::RowMajor<1, 2>, 128, true>();
+
     // TODO(KuangjuX): CUDA free failed: cudaErrorMisalignedAddress: misaligned
     // address.
     // run_test<64, 128, 128, tl::RowMajor<1, 2>, 128, true>();
