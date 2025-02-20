@@ -24,9 +24,6 @@ __device__ void init_value(Element* data, int numel) {
 
 template <typename Reg, typename DType>
 DEVICE void check_results(const Reg& r_tile, const Reg& r_tile_swizzled) {
-    printf("RegShape: (%d, %d)\n", Reg::kRows, Reg::kCols);
-    printf("TileNumel: %d\n", Reg::DType::kNumel);
-
     for (int i = 0; i < Reg::kRows; ++i) {
         for (int j = 0; j < Reg::kCols; ++j) {
             const DType* data1 = r_tile(i, j).data();
@@ -180,7 +177,7 @@ void run_test_rowmajor() {
 
     using G2S1 = GlobalToSharedLoader<Shared1, WarpLayout>;
     using G2S2 = GlobalToSharedLoader<Shared2, WarpLayout>;
-    using S2R = SharedToRegLoader<Reg, WarpLayout, WarpReuse::kRowReuseCont>;
+    using S2R = SharedToRegLoader<Reg, WarpLayout, kMode>;
 
     dim3 dim_grid(1, 1, 1);
     dim3 dim_block(kThreads, 1, 1);
@@ -198,9 +195,10 @@ void run_test_rowmajor() {
     G2S2 g2s_swizzled;
     S2R s2r;
 
-    auto test_func =
-        &swizzled_copy<Element, Global, GIterator, Shared1, SIterator1, Shared2,
-                       SIterator2, Reg, G2S1, G2S2, S2R>;
+    auto test_func = &swizzled_copy<Element, Global, GIterator,  //
+                                    Shared1, SIterator1,         //
+                                    Shared2, SIterator2,         //
+                                    Reg, G2S1, G2S2, S2R>;
 
     // maximal statically allocated smem per block
     const int kMaxSmemPerBlock = 48 * 1024;
@@ -489,7 +487,6 @@ TEST(TestSwizzledLoad, test_load_row_major) {
     // run_test_rowmajor<tl::RowMajor<1, 1>, 32, 128, 64, 64>();
 
     run_test_rowmajor<tl::RowMajor<1, 1>, 32, 128, 128, 64>();
-
     /*
     run_test_rowmajor<tl::RowMajor<1, 1>, 32, 256, 256, 64>();
     run_test_rowmajor<tl::RowMajor<1, 1>, 64, 64, 64, 64>();

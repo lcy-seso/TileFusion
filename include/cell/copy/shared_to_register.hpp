@@ -409,7 +409,6 @@ struct RegToSharedStorerImpl<Reg_, Shared_, kRowExec_, kColExec_,
   private:
     using BaseShape = traits::BaseTileShape<DType>;
 
-    // Use 64x8 as a basic swizzle block shape in ColMajor layout.
     using SwizzledBaseShape = traits::SwizzleBaseTileShape<DType>;
     static constexpr int kSwizzleRows = SwizzledBaseShape::kCols;
     static constexpr int kSwizzleCols = SwizzledBaseShape::kRows;
