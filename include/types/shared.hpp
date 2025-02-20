@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "types/base_tile.hpp"
 #include "types/layout.hpp"
 #include "util/print.hpp"
 

@@ -172,6 +172,7 @@ struct TestTraits {
     // register tile for operand B, calculate register usage for operand B
     static constexpr int kBKs = kWarpTileRowsB / BaseShapeReg::kRows;
     static constexpr int kBNs = kWarpTileColsB / BaseShapeReg::kCols;
+
     using RegB = RegTile<BaseTileColMajor<Element>, tl::ColMajor<kBKs, kBNs>>;
     // load RegTileB from shared
     using LoadRegB = SharedToRegLoader<RegB, WarpLayout, kModeB>;

@@ -39,6 +39,7 @@ class STileIterator {
     // to be inaccessible from external environments. Ensure this ambiguity is
     // acceptable.
     using SwizzleBaseShape = traits::SwizzleBaseTileShape<DType>;
+    using BaseShape = typename Tile::BaseShape;
 
     // FIXME(ying): The concept of `BaseShape` is inconsistent throughout the
     // current implementations. `BaseShape` should be implemented as commented

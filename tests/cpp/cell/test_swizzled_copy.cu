@@ -108,6 +108,8 @@ __global__ void swizzled_copy(const Element* data, G2S1& g2s,
     }
 }
 
+#define DEBUG true
+
 /// @brief This unit test verifies the correctness of the swizzled row-major
 ///        format for loading operand A in GEMM.
 template <typename WarpLayout, const int kRows, const int kCols,
@@ -159,8 +161,8 @@ void run_test_rowmajor() {
     using BaseShapeReg = traits::BaseTileShape<Element>;
     const int kSc0 = kWarpTileRows / BaseShapeReg::kRows;
     const int kSc1 = kWarpTileCols / BaseShapeReg::kCols;
-    using Reg = RegTile<BaseTileRowMajor<Element>, tl::RowMajor<kSc0, kSc1>>;
 
+    using Reg = RegTile<BaseTileRowMajor<Element>, tl::RowMajor<kSc0, kSc1>>;
 #ifdef DEBUG
     LOG(INFO) << std::endl
               << "WarpShape: (" << kWarpTileRows << ", " << kWarpTileCols << ")"
@@ -521,7 +523,6 @@ TEST(TestSwizzledLoad, test_load_row_major) {
 
 //     run_test_colmajor<tl::RowMajor<2, 1>, 128, 64, 128, 64>();
 //     run_test_colmajor<tl::RowMajor<1, 2>, 64, 128, 64, 64>();
-
 //     run_test_colmajor<tl::RowMajor<2, 2>, 128, 128, 128, 64>();
 //     run_test_colmajor<tl::RowMajor<4, 2>, 256, 128, 256, 64>();
 // }
@@ -554,7 +555,6 @@ TEST(TestSwizzledStored, test_row_major) {
     test_row_major_store<__half, tl::RowMajor<2, 1>, 64, 64, kSwizzled>();
     test_row_major_store<__half, tl::RowMajor<1, 2>, 64, 128, kSwizzled>();
     test_row_major_store<__half, tl::RowMajor<2, 2>, 64, 128, kSwizzled>();
-
     test_row_major_store<float, tl::RowMajor<1, 1>, 16, 32, kSwizzled>();
     test_row_major_store<float, tl::RowMajor<1, 1>, 16, 64, kSwizzled>();
     test_row_major_store<float, tl::RowMajor<1, 1>, 32, 64, kSwizzled>();
