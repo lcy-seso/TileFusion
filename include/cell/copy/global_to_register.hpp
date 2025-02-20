@@ -128,7 +128,7 @@ struct GlobalToRegLoaderImpl<Global_, Reg_, kRowExec_, kColExec_,
     static constexpr int kColExec = kColExec_;
 
     DEVICE void operator()(const DType* src, Reg& dst) {
-        int lane_id = threadIdx.x % warpSize;
+        int lane_id = threadIdx.x % WARP_SIZE;
         const DType* data;
 
         using Loader = GlobalToRegMatLoader<Global, typename Reg::DType,
@@ -162,9 +162,8 @@ struct GlobalToRegLoaderImpl<Global_, Reg_, kRowExec_, kColExec_,
     static constexpr int kColExec = kColExec_;
 
     DEVICE void operator()(const DType* src, Reg& dst) {
-        int lane_id = threadIdx.x % warpSize;
+        int lane_id = threadIdx.x % WARP_SIZE;
         const DType* data;
-
         using Loader = GlobalToRegMatLoader<Global, typename Reg::DType,
                                             tl::Layout::kColMajor>;
         Loader loader;
@@ -174,7 +173,6 @@ struct GlobalToRegLoaderImpl<Global_, Reg_, kRowExec_, kColExec_,
             int col = i * BaseShape::kRows + lane_id / 4;
             for (int j = 0; j < kRowExec; ++j) {
                 int row = j * BaseShape::kCols + (lane_id % 4) * 2;
-
                 data = src + col * Global::kColStride + row;
 
                 loader(data, dst(j, i));
@@ -208,13 +206,13 @@ struct RegToGlobalStorerImpl<Global_, Reg_, kRowExec_, kColExec_,
     static constexpr int kColExec = kColExec_;
 
     DEVICE void operator()(const Reg& src, DType* dst) {
-        int lane_id = threadIdx.x % warpSize;
-        DType* data;
+        int lane_id = threadIdx.x % WARP_SIZE;
 
         using Storer = RegToGlobalMatStorer<Global, typename Reg::DType,
                                             tl::Layout::kRowMajor>;
         Storer storer;
 
+        DType* data;
 #pragma unroll
         for (int i = 0; i < kRowExec; ++i) {
             int row = i * BaseShape::kCols + lane_id / 4;
@@ -242,7 +240,7 @@ struct RegToGlobalStorerImpl<Global_, Reg_, kRowExec_, kColExec_,
     static constexpr int kColExec = kColExec_;
 
     DEVICE void operator()(const Reg& src, DType* dst) {
-        int lane_id = threadIdx.x % warpSize;
+        int lane_id = threadIdx.x % WARP_SIZE;
         DType* data;
 
         using Storer = RegToGlobalMatStorer<Global, typename Reg::DType,

@@ -53,7 +53,7 @@ struct SharedToRegLoaderImpl<Shared, Reg_, kRowExec_, kColExec_,
     }
 
   private:
-    using BaseShape = traits::BaseTileShape<DType>;
+    using BaseShape = Shared::BaseShape;
 
     using SwizzledBaseShape = traits::SwizzleBaseTileShape<DType>;
     static constexpr int kSwizzledRows = SwizzledBaseShape::kRows;

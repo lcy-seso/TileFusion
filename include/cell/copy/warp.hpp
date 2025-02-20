@@ -299,8 +299,9 @@ struct SharedOffsetHelper<WarpLayout_, Shared_, kMode_, tl::Layout::kRowMajor,
   private:
     using Shared = Shared_;
     using WarpLayout = WarpLayout_;
-    using BaseShape = Shared::BaseShape;
     static constexpr WarpReuse kMode = kMode_;
+
+    using BaseShape = Shared::BaseShape;
 
     constexpr static int kTilePerRow = Shared::kRows / BaseShape::kRows;
     constexpr static int kTilePerCol = Shared::kCols / BaseShape::kCols;
@@ -332,8 +333,9 @@ struct SharedOffsetHelper<WarpLayout_, Shared_, kMode_, tl::Layout::kColMajor,
   private:
     using Shared = Shared_;
     using WarpLayout = WarpLayout_;
-    using BaseShape = Shared::BaseShape;
     static constexpr WarpReuse kMode = kMode_;
+
+    using BaseShape = Shared::BaseShape;
 
     constexpr static int kTilePerRow = Shared::kRows / BaseShape::kRows;
     constexpr static int kTilePerCol = Shared::kCols / BaseShape::kCols;
@@ -353,8 +355,9 @@ struct SharedOffsetHelper<WarpLayout_, Shared_, kMode_, kType, true> {
 
   private:
     using Shared = Shared_;
-    using BaseShape = Shared::BaseShape;
     static constexpr WarpReuse kMode = kMode_;
+
+    using BaseShape = Shared::BaseShape;
 
     constexpr static int kTilePerRow = Shared::kCols / BaseShape::kCols;
     constexpr static int kTilePerCol = Shared::kRows / BaseShape::kRows;
