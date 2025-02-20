@@ -109,21 +109,39 @@ template <typename Element, typename ElementAcc, const int kM, const int kN,
           const int kK, typename WarpLayout_, const int kChunkK,
           const bool kSwizzled>
 struct TestTraits {
-    using BaseShape = traits::BaseTileShape<Element>;
-
     /// ======== 1. configure threads and warp layout in a CTA ============
     using WarpLayout = WarpLayout_;
-    static constexpr int kThreads = tl::get_numel<WarpLayout> * 32;
-    static constexpr int kWarpPerRow = tl::num_rows<WarpLayout>;
-    static constexpr int kWarpPerCol = tl::num_cols<WarpLayout>;
+    static constexpr int kThreads = WarpLayout::kNumel * 32;
+    static constexpr int kWarpPerRow = WarpLayout::kRows;
+    static constexpr int kWarpPerCol = WarpLayout::kCols;
 
     /// == 2. configure tile transfer between global and shared using CuTe ==
+    static constexpr WarpReuse kModeA = WarpReuse::kRowReuseCont;
+    static constexpr int kWarpTileRowsA =
+        warp::warp_tile_rows<kM, WarpLayout::kRows, kModeA>();
+    static constexpr int kWarpTileColsA =
+        warp::warp_tile_cols<kK, WarpLayout::kCols, kModeA>();
+    using BaseShapeA =  // automatically infer the BaseTile shape
+        WarpBaseTileShape<Element, TileShape<kWarpTileRowsA, kWarpTileColsA>,
+                          tl::Layout::kRowMajor>;
+    using SharedA =
+        SharedTile<Element, tl::RowMajor<kM, kK>, kSwizzled, BaseShapeA>;
+
     using GlobalA = GlobalTile<Element, tl::RowMajor<kM, kK>>;
-    using SharedA = SharedTile<Element, tl::RowMajor<kM, kK>, kSwizzled>;
     using LoadSharedA = GlobalToSharedLoader<SharedA, WarpLayout>;
 
+    static constexpr WarpReuse kModeB = WarpReuse::kColReuseCont;
+    static constexpr int kWarpTileRowsB =
+        warp::warp_tile_rows<kM, WarpLayout::kRows, kModeB>();
+    static constexpr int kWarpTileColsB =
+        warp::warp_tile_cols<kK, WarpLayout::kCols, kModeB>();
+    using BaseShapeB =  // automatically infer the BaseTile shape
+        WarpBaseTileShape<Element, TileShape<kWarpTileRowsB, kWarpTileColsB>,
+                          tl::Layout::kColMajor>;
+    using SharedB =
+        SharedTile<Element, tl::ColMajor<kK, kN>, kSwizzled, BaseShapeB>;
+
     using GlobalB = GlobalTile<Element, tl::ColMajor<kK, kN>>;
-    using SharedB = SharedTile<Element, tl::ColMajor<kK, kN>, kSwizzled>;
     using LoadSharedB = GlobalToSharedLoader<SharedB, WarpLayout>;
 
     /// === 3. configure tile transfer between shared and register loader ===
@@ -137,16 +155,16 @@ struct TestTraits {
 
     // register tile for operand A, calculate register usage for operand A
     // warp tile shape for the operand A
-    static constexpr int kAMs = kM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kAKs = kChunkK / BaseShape::kCols;
+    static constexpr int kAMs = kWarpTileRowsA / BaseShapeA::kRows;
+    static constexpr int kAKs = kWarpTileColsA / BaseShapeA::kCols;
     using RegA = RegTile<BaseTileRowMajor<Element>, tl::RowMajor<kAMs, kAKs>>;
     // load RegTileA from shared
     using LoadRegA =
         SharedToRegLoader<RegA, WarpLayout, WarpReuse::kRowReuseCont>;
 
     // register tile for operand B, calculate register usage for operand B
-    static constexpr int kBKs = kChunkK / BaseShape::kRows;
-    static constexpr int kBNs = kN / kWarpPerCol / BaseShape::kCols;
+    static constexpr int kBKs = kWarpTileRowsB / BaseShapeB::kRows;
+    static constexpr int kBNs = kWarpTileColsB / BaseShapeB::kCols;
     using RegB = RegTile<BaseTileColMajor<Element>, tl::ColMajor<kBKs, kBNs>>;
     // load RegTileB from shared
     using LoadRegB =
