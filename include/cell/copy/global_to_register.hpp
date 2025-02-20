@@ -13,11 +13,11 @@ namespace tilefusion::cell::copy {
 
 /**
  * @brief Load a BastTile Matrix from Global memory to Register.
- * @tparam Global_ Global memory tile type.
- * @tparam BaseTile_ BaseTile type.
- * @tparam type Global Layout type.
+ * @param Global_ Global memory tile type.
+ * @param BaseTile_ BaseTile type.
+ * @param type Global Layout type.
  */
-template <typename Global_, typename BaseTile_, const tl::Layout kType>
+template <typename Global, typename BaseTile, const tl::Layout kType>
 struct GlobalToRegMatLoader;
 
 template <typename Global_, typename BaseTile_>
@@ -56,9 +56,9 @@ struct GlobalToRegMatLoader<Global_, BaseTile_, tl::Layout::kColMajor> {
 
 /**
  * @brief Store a [`BaseTile`] to Global memory.
- * @tparam Global_ Global memory tile type.
- * @tparam BaseTile_ BaseTile type.
- * @tparam type Global Layout type.
+ * @param Global_ Global memory tile type.
+ * @param BaseTile_ BaseTile type.
+ * @param type Global Layout type.
  */
 template <typename Global_, typename BaseTile_, const tl::Layout kType>
 struct RegToGlobalMatStorer {
@@ -129,12 +129,12 @@ struct GlobalToRegLoaderImpl<Global_, Reg_, kRowExec_, kColExec_,
 
     DEVICE void operator()(const DType* src, Reg& dst) {
         int lane_id = threadIdx.x % WARP_SIZE;
-        const DType* data;
 
         using Loader = GlobalToRegMatLoader<Global, typename Reg::DType,
                                             tl::Layout::kRowMajor>;
         Loader loader;
 
+        const DType* data;
 #pragma unroll
         for (int i = 0; i < kRowExec; ++i) {
             int row = i * BaseShape::kCols + lane_id / 4;
@@ -241,12 +241,12 @@ struct RegToGlobalStorerImpl<Global_, Reg_, kRowExec_, kColExec_,
 
     DEVICE void operator()(const Reg& src, DType* dst) {
         int lane_id = threadIdx.x % WARP_SIZE;
-        DType* data;
 
         using Storer = RegToGlobalMatStorer<Global, typename Reg::DType,
                                             tl::Layout::kColMajor>;
         Storer storer;
 
+        DType* data;
 #pragma unroll
         for (int i = 0; i < kColExec; ++i) {
             int col = i * BaseShape::kRows + lane_id / 4;
@@ -302,10 +302,10 @@ struct GlobalToRegLoader {
 /**
  * @brief Store a data tile from Register to Global memory based on the warp
  *        reuse mode.
- * @tparam Global_ Global memory tile type.
- * @tparam Reg_ Register tile type.
- * @tparam WarpLayout_ Warp layout type.
- * @tparam kMode_ Warp reuse mode.
+ * @param Global_ Global memory tile type.
+ * @param Reg_ Register tile type.
+ * @param WarpLayout_ Warp layout type.
+ * @param kMode_ Warp reuse mode.
  */
 template <typename Global_, typename Reg_, typename WarpLayout_>
 struct RegToGlobalStorer {

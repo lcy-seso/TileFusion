@@ -165,6 +165,7 @@ struct TestTraits {
     // warp tile shape for the operand A
     static constexpr int kAMs = kWarpTileRowsA / BaseShapeReg::kRows;
     static constexpr int kAKs = kWarpTileColsA / BaseShapeReg::kCols;
+
     using RegA = RegTile<BaseTileRowMajor<Element>, tl::RowMajor<kAMs, kAKs>>;
     using LoadRegA = SharedToRegLoader<RegA, WarpLayout, kModeA>;
 
@@ -185,6 +186,7 @@ struct TestTraits {
         warp::warp_tile_cols<kN, WarpLayout::kCols, kModeC>();
     static constexpr int kCMs = kWarpTileRowsC / BaseShapeReg::kRows;
     static constexpr int kCNs = kWarpTileColsC / BaseShapeReg::kCols;
+
     using RegC =
         RegTile<BaseTileRowMajor<ElementAcc>, tl::RowMajor<kCMs, kCNs>>;
 
