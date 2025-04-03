@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 #include "cell/mod.hpp"
+#include "cuda_info.hpp"
 #include "kernels/flash_attn.hpp"
 #include "types/mod.hpp"
 
@@ -411,7 +412,7 @@ void run(const InType* dQ, const InType* dK, const InType* dV, OutType* dO) {
         BroadcastMul, BroadcastDiv, BlockExp, BlockAdd, VecMax, VecAdd, VecSub,
         VecMul, VecExp, RegVecPrinter, RegAccPrinter>;
 
-    if (shm_size > 48 * 1024) {
+    if (shm_size > GetMaxSharedMemPerBlock(0)) {
         cudaFuncSetAttribute(
             kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shm_size);
     }

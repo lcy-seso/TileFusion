@@ -10,14 +10,14 @@
 
 namespace tilefusion {
 // Returns the number of GPUs.
-int GetGPUDeviceCount() {
+int GetDeviceCount() {
     int deviceCount = 0;
     CudaCheck(cudaGetDeviceCount(&deviceCount));
     return deviceCount;
 }
 
 // Returns the compute capability of the given GPU.
-int GetGPUComputeCapability(int id) {
+int GetComputeCapability(int id) {
     int major, minor;
     CudaCheck(
         cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, id));
@@ -27,7 +27,7 @@ int GetGPUComputeCapability(int id) {
 }
 
 // Returns the number of multiprocessors for the given GPU.
-int GetGPUMultiProcessors(int id) {
+int GetMultiProcessors(int id) {
     int count;
     CudaCheck(
         cudaDeviceGetAttribute(&count, cudaDevAttrMultiProcessorCount, id));
@@ -35,7 +35,7 @@ int GetGPUMultiProcessors(int id) {
 }
 
 // Returns the maximum number of threads per multiprocessor for the given GPU.
-int GetGPUMaxThreadsPerMultiProcessor(int id) {
+int GetMaxThreadsPerMultiProcessor(int id) {
     int count;
     CudaCheck(cudaDeviceGetAttribute(
         &count, cudaDevAttrMaxThreadsPerMultiProcessor, id));
@@ -43,15 +43,29 @@ int GetGPUMaxThreadsPerMultiProcessor(int id) {
 }
 
 // Returns the maximum number of threads per block for the given GPU.
-int GetGPUMaxThreadsPerBlock(int id) {
+int GetMaxThreadsPerBlock(int id) {
     int count;
     CudaCheck(
         cudaDeviceGetAttribute(&count, cudaDevAttrMaxThreadsPerBlock, id));
     return count;
 }
 
+// Returns the maximum shared memory per block for the given GPU.
+int GetMaxSharedMemPerBlock(int id) {
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, id);
+    return deviceProp.sharedMemPerBlock;
+}
+
+// Returns the maximum shared memory per multiprocessor for the given GPU.
+int GetMaxSharedMemPerSM(int id) {
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, id);
+    return deviceProp.sharedMemPerMultiprocessor;
+}
+
 // Returns the maximum grid size for the given GPU.
-dim3 GetGpuMaxGridDimSize(int id) {
+dim3 GetMaxGridDimSize(int id) {
     dim3 grid_size;
 
     int size;

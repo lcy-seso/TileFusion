@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+#include "cuda_info.hpp"
 #include "cutlass_fused_two_gemms.cuh"
 #include "kernels/fused_two_gemms.hpp"
 #include "util.cuh"
@@ -132,7 +133,7 @@ void run(float epsilon = 1e-3) {
         &cute_fused_gemm<cutlass::half_t, kWarpPerRow, kWarpPerCol, kM, kN, kK,
                          kP, kTM, kTN, kTK, kTP>;
 
-    if (shm_size > 48 * 1024) {
+    if (shm_size > GetMaxSharedMemPerBlock(0)) {
         cudaFuncSetAttribute(ke_tilefusion,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              shm_size);

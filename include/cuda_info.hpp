@@ -9,23 +9,29 @@
 
 namespace tilefusion {
 // Returns the number of GPUs.
-int GetGPUDeviceCount();
+int GetDeviceCount();
 
 // Returns the compute capability of the given GPU.
-int GetGPUComputeCapability(int id);
+int GetComputeCapability(int id);
 
 // Returns the number of multiprocessors for the given GPU.
-int GetGPUMultiProcessors(int id);
+int GetMultiProcessors(int id);
 
 // Returns the maximum number of threads per multiprocessor for the given
 // GPU.
-int GetGPUMaxThreadsPerMultiProcessor(int id);
+int GetMaxThreadsPerMultiProcessor(int id);
 
 // Returns the maximum number of threads per block for the given GPU.
-int GetGPUMaxThreadsPerBlock(int id);
+int GetMaxThreadsPerBlock(int id);
+
+// Returns the maximum shared memory per block for the given GPU.
+int GetMaxSharedMemPerBlock(int id);
+
+// Returns the maximum shared memory per multiprocessor for the given GPU.
+int GetMaxSharedMemPerSM(int id);
 
 // Returns the maximum grid size for the given GPU.
-dim3 GetGpuMaxGridDimSize(int id);
+dim3 GetMaxGridDimSize(int id);
 
 // Returns the name of the device.
 std::string GetDeviceName();

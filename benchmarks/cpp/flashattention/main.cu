@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+#include "cuda_info.hpp"
 #include "cutlass_fa.cuh"
 #include "util.hpp"
-
 template <const int kM, const int kN, const int kK, const int kP, const int kTM,
           const int kTN, const int kTK, const int kTP, const int kWarpPerRow,
           const int kWarpPerCol, const int kStagesQK, const int kStagesV>
@@ -103,7 +103,7 @@ void run(bool check = true) {
                                                kK, kP, kTM, kTN, kTK, kTP,
                                                kThreads, kStagesQK, kStagesV>;
 
-    if (shm_size > 48 * 1024) {
+    if (shm_size > GetMaxSharedMemPerBlock(0)) {
         cudaFuncSetAttribute(
             fa_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shm_size);
     }
