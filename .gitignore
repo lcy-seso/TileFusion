@@ -41,3 +41,7 @@ benchmarks/**/build/
 
 # Development mode soft link
 tilefusion
+
+# Sphinx documentation
+docs/build/
+docs/source/api/generated/
