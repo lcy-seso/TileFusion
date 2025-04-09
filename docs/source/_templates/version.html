@@ -1,0 +1,18 @@
+{%- if show_version %}
+<div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> TileFusion</span>
+    v: {{ version }}
+    <span class="fa fa-caret-down"></span>
+  </span>
+  <div class="rst-other-versions">
+    <dl>
+      <dt>{{ _('Versions') }}</dt>
+      <dd><a href="/">latest</a></dd>
+      {%- if version.endswith('dev') %}
+      <dd><a href="/stable/">stable</a></dd>
+      {%- endif %}
+    </dl>
+  </div>
+</div>
+{%- endif %}

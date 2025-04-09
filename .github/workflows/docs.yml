@@ -1,0 +1,43 @@
+name: Build and Deploy API Documentation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r docs/requirements-docs.txt
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+
+      - name: Build documentation
+        run: |
+          ./scripts/build_docs.sh
+
+      - name: Deploy to Jekyll site
+        if: github.ref == 'refs/heads/main'  # Only deploy on main branch
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          deploy_key: ${{ secrets.DEPLOY_KEY }}
+          external_repository: ${{ secrets.JEKYLL_REPO }}
+          publish_branch: api-docs
+          publish_dir: ./docs/build/html/api
+          destination_dir: api

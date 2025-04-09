@@ -38,3 +38,7 @@ MANIFEST
 # Build directories in examples and benchmarks
 examples/**/build/
 benchmarks/**/build/
+
+# Sphinx documentation
+docs/build/
+docs/source/api/generated/
