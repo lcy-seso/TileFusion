@@ -1,7 +1,7 @@
-TileFusion Documentation
+TileFusion API Reference
 ========================
 
-Welcome to the TileFusion documentation.
+Welcome to the TileFusion API reference documentation.
 
 .. toctree::
    :maxdepth: 2
