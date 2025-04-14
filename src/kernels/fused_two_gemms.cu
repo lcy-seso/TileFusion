@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 #include "cell/mod.hpp"
+#include "kernels/common.hpp"
+#include "kernels/dispatch_macros.hpp"
 #include "kernels/fused_two_gemms.hpp"
 #include "types/mod.hpp"
 
@@ -15,11 +17,22 @@ namespace tilefusion::kernels {
 
 namespace {
 
-template <typename InType, typename AccType,                       //
-          typename WarpLayout, const int kSharedAccess,            //
-          const int kM, const int kN, const int kK, const int kP,  //
-          const int kTM, const int kTN, const int kTK, const int kTP>
+template <typename InType, typename AccType, typename WarpLayout,  //
+          const int kM, const int kN, const int kK, const int kP>
 struct KeTraits {
+    static constexpr int kTM = 64;
+    static constexpr int kTN = 64;
+    static constexpr int kTK = 64;
+    static constexpr int kTP = 64;
+
+    static constexpr int kSharedAccess = 64;
+
+    static constexpr int kShmInput = (kTM * kTK + kTK * kTN + kTN * kTP);
+    static constexpr int kShmOutput = kTM * kTP;
+    static constexpr int kShmSize = kShmInput < kShmOutput
+                                        ? kShmOutput * sizeof(InType)
+                                        : kShmInput * sizeof(InType);
+
     using BaseShape = traits::BaseTileShape<InType>;
 
     static constexpr int kWarpPerRow = tl::num_rows<WarpLayout>;
@@ -202,96 +215,105 @@ __global__ void ke_fused_two_gemms(const InType* dA, const InType* dB,
 
 void fused_two_gemms(const torch::Tensor& A, const torch::Tensor& B,
                      const torch::Tensor& C, torch::Tensor& D) {
-    // const int64_t m = A.size(0);
-    // const int64_t n = B.size(1);
-    // const int64_t k = B.size(1);
-    // const int64_t p = C.size(1);
+    CHECK_INPUT(A);
+    CHECK_INPUT(B);
+    CHECK_INPUT(C);
+    CHECK_INPUT(D);
+
+    const at::ScalarType dtype = A.scalar_type();
+    TORCH_CHECK(dtype == at::ScalarType::Half && B.scalar_type() == dtype &&
+                    C.scalar_type() == dtype && D.scalar_type() == dtype,
+                "the inputs and output must be half-precision (fp16).");
+
+    const int64_t m = A.size(0);
+    const int64_t n = B.size(1);
+    const int64_t k = B.size(1);
+    const int64_t p = C.size(1);
 
     using WarpLayout = tl::RowMajor<2, 1>;
 
     using InType = __half;
     using AccType = float;
 
-    static constexpr int kSharedAccess = 64;
+    TILEFUSION_DISPATCH_INTEGER(m, kM, [&] {
+        TILEFUSION_DISPATCH_INTEGER(n, kN, [&] {
+            TILEFUSION_DISPATCH_INTEGER(k, kK, [&] {
+                TILEFUSION_DISPATCH_INTEGER(p, kP, [&] {
+                    using Config =
+                        KeTraits<InType, AccType, WarpLayout, kM, kN, kK, kP>;
 
-    // FIXME
-    static constexpr int kM = 256;
-    static constexpr int kN = 128;
-    static constexpr int kK = 64;
-    static constexpr int kP = 64;
+                    using RegA = typename Config::RegA;
+                    using RegB = typename Config::RegB;
+                    using RegC = typename Config::RegC;
+                    using RegD = typename Config::RegD;
+                    using RegDHalf = typename Config::RegDHalf;
+                    using RegAcc = typename Config::RegAcc;
+                    using RegAccCast = typename Config::RegAccCast;
 
-    static constexpr int kTM = 64;
-    static constexpr int kTN = 64;
-    static constexpr int kTK = 64;
-    static constexpr int kTP = 64;
+                    using GIteratorA = typename Config::GIteratorA;
+                    using SharedA = typename Config::SharedA;
+                    using SharedALoader = typename Config::SharedALoader;
+                    using RegALoader = typename Config::RegALoader;
 
-    using Config = KeTraits<InType, AccType, WarpLayout, kSharedAccess,  //
-                            kM, kN, kK, kP,      /* problem shape */
-                            kTM, kTN, kTK, kTP>; /* cta tile shape */
+                    using GIteratorB = typename Config::GIteratorB;
+                    using SharedB = typename Config::SharedB;
+                    using SharedBLoader = typename Config::SharedBLoader;
+                    using RegBLoader = typename Config::RegBLoader;
 
-    using RegA = typename Config::RegA;
-    using RegB = typename Config::RegB;
-    using RegC = typename Config::RegC;
-    using RegD = typename Config::RegD;
-    using RegDHalf = typename Config::RegDHalf;
-    using RegAcc = typename Config::RegAcc;
-    using RegAccCast = typename Config::RegAccCast;
+                    using GIteratorC = typename Config::GIteratorC;
+                    using SharedC = typename Config::SharedC;
+                    using SharedCLoader = typename Config::SharedCLoader;
+                    using RegCLoader = typename Config::RegCLoader;
 
-    using GIteratorA = typename Config::GIteratorA;
-    using SharedA = typename Config::SharedA;
-    using SharedALoader = typename Config::SharedALoader;
-    using RegALoader = typename Config::RegALoader;
+                    using GlobalD = typename Config::GlobalD;
+                    using SharedD = typename Config::SharedD;
+                    using StoreRegD = typename Config::StoreRegD;
+                    using StoreSharedD = typename Config::StoreSharedD;
 
-    using GIteratorB = typename Config::GIteratorB;
-    using SharedB = typename Config::SharedB;
-    using SharedBLoader = typename Config::SharedBLoader;
-    using RegBLoader = typename Config::RegBLoader;
+                    using ConvertAcc = typename Config::ConvertHalf;
+                    using ConvertD = typename Config::ConvertD;
 
-    using GIteratorC = typename Config::GIteratorC;
-    using SharedC = typename Config::SharedC;
-    using SharedCLoader = typename Config::SharedCLoader;
-    using RegCLoader = typename Config::RegCLoader;
+                    int block_x = CeilDiv<kM, Config::kTM>;
+                    int block_y = CeilDiv<kP, Config::kTP>;
+                    int block_z = 1;
 
-    using SharedD = typename Config::SharedD;
-    using StoreRegD = typename Config::StoreRegD;
-    using StoreSharedD = typename Config::StoreSharedD;
+                    dim3 grid(block_x, block_y, block_z);
+                    dim3 block(Config::kThreads, 1, 1);
 
-    using ConvertAcc = typename Config::ConvertHalf;
-    using ConvertD = typename Config::ConvertD;
+                    auto kernel = &ke_fused_two_gemms<
+                        InType, AccType, GIteratorA, SharedA, RegA,
+                        SharedALoader, RegALoader, GIteratorB, SharedB, RegB,
+                        SharedBLoader, RegBLoader, GIteratorC, SharedC, RegC,
+                        SharedCLoader, RegCLoader, RegAcc, RegAccCast, GlobalD,
+                        SharedD, RegD, RegDHalf, StoreRegD, StoreSharedD,
+                        ConvertAcc, ConvertD>;
 
-    int block_x = CeilDiv<kM, kTM>;
-    int block_y = CeilDiv<kP, kTP>;
-    int block_z = 1;
+                    if (Config::kShmSize > 48 * 1024) {
+                        cudaFuncSetAttribute(
+                            kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                            Config::kShmSize);
+                    }
 
-    dim3 grid(block_x, block_y, block_z);
-    dim3 block(Config::kThreads, 1, 1);
+                    const InType* dA =
+                        reinterpret_cast<const InType*>(A.data_ptr());
+                    const InType* dB =
+                        reinterpret_cast<const InType*>(B.data_ptr());
+                    const InType* dC =
+                        reinterpret_cast<const InType*>(C.data_ptr());
+                    InType* dD =
+                        reinterpret_cast<InType*>(D.mutable_data_ptr());
 
-    int shm_input = (kTM * kTK + kTK * kTN + kTN * kTP);
-    int shm_output = kTM * kTP;
-    int shm_size = shm_input < shm_output ? shm_output * sizeof(InType)
-                                          : shm_input * sizeof(InType);
-
-    auto kernel =
-        &ke_fused_two_gemms<InType, AccType,            //
-                            GIteratorA, SharedA, RegA,  //
-                            SharedALoader, RegALoader,  //
-                            GIteratorB, SharedB, RegB,  //
-                            SharedBLoader, RegBLoader,  //
-                            GIteratorC, SharedC, RegC,  //
-                            SharedCLoader, RegCLoader,  //
-                            RegAcc, RegAccCast, typename Config::GlobalD,
-                            SharedD, RegD, RegDHalf, StoreRegD, StoreSharedD,
-                            ConvertAcc, ConvertD>;
-
-    if (shm_size > 48 * 1024) {
-        cudaFuncSetAttribute(
-            kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shm_size);
-    }
-
-    kernel<<<grid, block, shm_size, 0>>>(
-        A.data_ptr<InType>(), B.data_ptr<InType>(), C.data_ptr<InType>(),
-        D.data_ptr<InType>(), kM, kN, kK, kP, kTM, kTN, kTK, kTP);
-    cudaDeviceSynchronize();
+                    kernel<<<grid, block, Config::kShmSize, 0>>>(
+                        dA, dB, dC, dD,  // inputs
+                        kM, kN, kK, kP,  // problem size
+                        Config::kTM, Config::kTN, Config::kTK,
+                        Config::kTP  // shared memory tile size
+                    );
+                    cudaDeviceSynchronize();
+                });
+            });
+        });
+    });
 }
 
 }  // namespace tilefusion::kernels

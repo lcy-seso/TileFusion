@@ -8,14 +8,17 @@
 
 namespace tilefusion ::kernels {
 
-REGISTER_KERNEL(
-    scatter_nd,
-    "scatter_nd(Tensor data, Tensor(a!) updates, Tensor indices) -> ()",
-    &scatter_nd);
+REGISTER_OP(scatter_nd,
+            "scatter_nd(Tensor data, Tensor(a!) updates, Tensor indices) -> ()",
+            &scatter_nd);
 
-REGISTER_KERNEL(flash_attention,
-                "flash_attention(Tensor Q, Tensor K, Tensor V, Tensor(a!) O, "
-                "int m, int n, int k, int p) -> ()",
-                &flash_attention);
+REGISTER_OP(flash_attention,
+            "flash_attention(Tensor Q, Tensor K, Tensor V, Tensor(a!) O, "
+            "int m, int n, int k, int p) -> ()",
+            &flash_attention);
+
+REGISTER_OP(fused_two_gemms,
+            "fused_two_gemms(Tensor A, Tensor B, Tensor C, Tensor(a!) D) ->()",
+            &fused_two_gemms);
 
 }  // namespace tilefusion::kernels
