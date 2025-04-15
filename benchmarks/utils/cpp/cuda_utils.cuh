@@ -14,6 +14,9 @@ namespace benchmarks {
 template <int a, int b>
 inline constexpr int CeilDiv = (a + b - 1) / b;  // for compile-time values
 
+// Runtime version of CeilDiv
+inline int ceil_div(int a, int b) { return (a + b - 1) / b; }
+
 #if defined(__CUDA_ARCH__)
     #define HOST_DEVICE __forceinline__ __host__ __device__
     #define DEVICE __forceinline__ __device__

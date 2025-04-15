@@ -22,3 +22,32 @@
                          toString(_type), "'");                            \
         }                                                                  \
     }();
+
+#define TILEFUSION_DISPATCH_INTEGER(INTEGER, NAME, ...)               \
+    [&] {                                                             \
+        switch (INTEGER) {                                            \
+            case 64: {                                                \
+                static constexpr int NAME = 64;                       \
+                return __VA_ARGS__();                                 \
+            }                                                         \
+            case 128: {                                               \
+                static constexpr int NAME = 128;                      \
+                return __VA_ARGS__();                                 \
+            }                                                         \
+            case 256: {                                               \
+                static constexpr int NAME = 256;                      \
+                return __VA_ARGS__();                                 \
+            }                                                         \
+            case 512: {                                               \
+                static constexpr int NAME = 512;                      \
+                return __VA_ARGS__();                                 \
+            }                                                         \
+            case 1024: {                                              \
+                static constexpr int NAME = 1024;                     \
+                return __VA_ARGS__();                                 \
+            }                                                         \
+            default:                                                  \
+                AT_ERROR("Dispatch is not implemented for integer: ", \
+                         INTEGER);                                    \
+        }                                                             \
+    }();
