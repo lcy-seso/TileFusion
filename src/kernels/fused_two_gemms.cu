@@ -30,7 +30,7 @@ extern "C" __global__ void fused_two_gemms_kernel_)"
     )" << in_type
        << R"(* D,
     int m, int n, int k, int p) {
-    using Config = FusedTwoGemmsTraits<)"
+    using Config = tilefusion::kernels::FusedTwoGemmsTraits<)"
        << in_type << ", " << acc_type << R"(,
         tl::RowMajor<2, 1>, )"
        << m << ", " << n << ", " << k << ", " << p << R"(>;
@@ -62,27 +62,46 @@ void fused_two_gemms(const torch::Tensor& A, const torch::Tensor& B,
     std::string in_type = jit::get_type_string<InType>();
     std::string acc_type = jit::get_type_string<AccType>();
 
-    // Generate kernel source
     std::string kernel_source =
         generate_fused_two_gemms_kernel_source(in_type, acc_type, m, n, k, p);
 
-    // Create unique kernel name
     std::string kernel_name = "fused_two_gemms_kernel_" + in_type + "_" +
                               acc_type + "_" + std::to_string(m) + "_" +
                               std::to_string(n) + "_" + std::to_string(k) +
                               "_" + std::to_string(p);
 
     auto& jit = jit::JitCompiler::instance();
-    CUfunction kernel = jit.get_or_compile_kernel(kernel_name, kernel_source);
+
+    // Get the project root directory from the current file's location
+    std::string current_file = __FILE__;
+    std::string project_root =
+        current_file.substr(0, current_file.find("/src/"));
+
+    std::vector<std::string> include_paths = {
+        project_root + "/include", project_root + "/3rd-party/cutlass/include"};
+
+    std::vector<std::string> compile_args = {"-O3",
+                                             "-std=c++20",
+                                             "--expt-relaxed-constexpr",
+                                             "--expt-extended-lambda",
+                                             "-DNDEBUG",
+                                             "-Xcompiler",
+                                             "-fPIC",
+                                             "-Xcompiler",
+                                             "-Wall",
+                                             "-Xcompiler",
+                                             "-Wextra"};
+    CUfunction kernel = jit.get_or_compile_kernel(kernel_name, kernel_source,
+                                                  include_paths, compile_args);
 
     if (!kernel) {
         throw std::runtime_error("Failed to compile or retrieve kernel");
     }
 
-    int block_size = 128;  // Adjust based on your needs
+    // FIXME(ying): this should be tuned properly for the best performance
+    int block_size = 128;
     int grid_size = (m * p + block_size - 1) / block_size;
 
-    // Properly cast the tensor data pointers to half precision
     const InType* A_ptr =
         reinterpret_cast<const InType*>(A.data_ptr<at::Half>());
     const InType* B_ptr =
