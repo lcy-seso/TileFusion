@@ -4,208 +4,38 @@
 #include "cell/mod.hpp"
 #include "jit/mod.hpp"
 #include "kernels/common.hpp"
-#include "kernels/fused_two_gemms.hpp"
-#include "types/mod.hpp"
-
-using namespace tilefusion;
-using namespace cell;
-using namespace copy;
-using namespace compute;
-namespace tl = tile_layout;
+#include "kernels/ops.hpp"
 
 namespace tilefusion::kernels {
 
-template <typename InType, typename AccType,  //
-          typename WholeShape, typename CtaTileShape, typename WarpLayout,
-          const int kSharedAccess>
-struct FusedTwoGemmsTraits {
-    using BaseShape = traits::BaseTileShape<InType>;
+using namespace tilefusion;
+namespace tl = tile_layout;
 
-    static constexpr int kWarpPerRow = tl::num_rows<WarpLayout>;
-    static constexpr int kWarpPerCol = tl::num_cols<WarpLayout>;
-    static_assert(kWarpPerCol == 1, "WarpPerCol must be 1");
+std::string generate_fused_two_gemms_kernel_source(const std::string& in_type,
+                                                   const std::string& acc_type,
+                                                   int m, int n, int k, int p) {
+    std::stringstream ss;
+    ss << R"(
+#include "kernels/fused_two_gemms_device.cuh"
 
-    static constexpr int kThreads = tl::get_numel<WarpLayout> * 32;
-
-    static constexpr int kM = dim_size<0, WholeShape>;
-    static constexpr int kN = dim_size<1, WholeShape>;
-    static constexpr int kK = dim_size<2, WholeShape>;
-    static constexpr int kP = dim_size<3, WholeShape>;
-
-    static constexpr int kTM = dim_size<0, CtaTileShape>;
-    static constexpr int kTN = dim_size<1, CtaTileShape>;
-    static constexpr int kTK = dim_size<2, CtaTileShape>;
-    static constexpr int kTP = dim_size<3, CtaTileShape>;
-
-    // operand A
-    using GlobalA = GlobalTile<InType, tl::RowMajor<kTM, kK>>;
-    // chunk the K dimension to fit into shared memory
-    using GIteratorA = GTileIterator<GlobalA, TileShape<kTM, kTK>>;
-
-    static const bool kUseSwizzling = true;
-
-    using SharedA = SharedTile<InType, tl::RowMajor<kTM, kTK>, kUseSwizzling,
-                               kSharedAccess>;
-
-    static constexpr int kAMs = kTM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kAKs = kTK / BaseShape::kCols;
-    using RegA = RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kAMs, kAKs>>;
-
-    using SharedALoader = GlobalToSharedLoader<SharedA, WarpLayout>;
-    using RegALoader =
-        SharedToRegLoader<RegA, WarpLayout, WarpReuse::kRowReuseCont>;
-
-    // operand B
-    using GlobalB = GlobalTile<InType, tl::ColMajor<kK, kN>>;
-    using GIteratorB = GTileIterator<GlobalB, TileShape<kTK, kTN>>;
-    using SharedB = SharedTile<InType, tl::ColMajor<kTK, kTN>, kUseSwizzling,
-                               kSharedAccess>;
-
-    static constexpr int kBKs = kTK / BaseShape::kRows;
-    static constexpr int kBNs = kTN / kWarpPerCol / BaseShape::kCols;
-    using RegB = RegTile<BaseTileColMajor<InType>, tl::ColMajor<kBKs, kBNs>>;
-
-    using SharedBLoader = GlobalToSharedLoader<SharedB, WarpLayout>;
-    using RegBLoader =
-        SharedToRegLoader<RegB, WarpLayout, WarpReuse::kColReuseCont>;
-
-    // operand C
-    using GlobalC = GlobalTile<InType, tl::ColMajor<kN, kTP>>;
-    // chunk the N dimension to fit into shared memory
-    using GIteratorC = GTileIterator<GlobalC, TileShape<kTN, kTP>>;
-    using SharedC = SharedTile<InType, tl::ColMajor<kTN, kTP>, kUseSwizzling,
-                               kSharedAccess>;
-
-    static constexpr int kCNs = kTN / BaseShape::kRows;
-    static constexpr int kCPs = kTP / kWarpPerCol / BaseShape::kCols;
-    using RegC = RegTile<BaseTileColMajor<InType>, tl::ColMajor<kCNs, kCPs>>;
-
-    using SharedCLoader = GlobalToSharedLoader<SharedC, WarpLayout>;
-    using RegCLoader =
-        SharedToRegLoader<RegC, WarpLayout, WarpReuse::kColReuseCont>;
-
-    // output D
-    using GlobalD = GlobalTile<InType, tl::RowMajor<kTM, kTP>>;
-    using SharedD = SharedTile<InType, tl::RowMajor<kTM, kTP>, kUseSwizzling,
-                               kSharedAccess>;
-
-    static constexpr int kDMs = kTM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kDPs = kTP / kWarpPerCol / BaseShape::kCols;
-    using RegD = RegTile<BaseTileRowMajor<AccType>, tl::RowMajor<kDMs, kDPs>>;
-    using RegDHalf =
-        RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kDMs, kDPs>>;
-
-    static constexpr int kAccMs = kTM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kAccNs = kTN / kWarpPerCol / BaseShape::kCols;
-
-    // Reg Acc
-    using RegAcc =
-        RegTile<BaseTileRowMajor<AccType>, tl::RowMajor<kAccMs, kAccNs>>;
-    using RegAccCast =
-        RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kAccMs, kAccNs>>;
-
-    // Convert the accumulator to half
-    using ConvertHalf = compute::RegTileConvert<RegAcc, RegAccCast>;
-    using ConvertD = compute::RegTileConvert<RegD, RegDHalf>;
-
-    using StoreRegD = RegToSharedStorer<RegDHalf, WarpLayout>;
-    using StoreSharedD = SharedToGlobalStorer<SharedD, WarpLayout>;
-};
-
-template <typename InType, typename AccType,                     //
-          typename GIteratorA, typename SharedA, typename RegA,  //
-          typename SharedALoader, typename RegALoader,           //
-          typename GIteratorB, typename SharedB, typename RegB,  //
-          typename SharedBLoader, typename RegBLoader,           //
-          typename GIteratorC, typename SharedC, typename RegC,  //
-          typename SharedCLoader, typename RegCLoader,           //
-          typename RegAcc, typename RegAccCast, typename GlobalD,
-          typename SharedD, typename RegD, typename RegDHalf,
-          typename StoreRegD, typename StoreSharedD, typename ConvertAcc,
-          typename ConvertD>
-__global__ void ke_fused_two_gemms(const InType* dA, const InType* dB,
-                                   const InType* dC, InType* dD, int kM, int kN,
-                                   int kK, int kP, int kTM, int kTN, int kTK,
-                                   int kTP) {
-    // Advance to the global data tile to the current CTA.
-    const InType* A = dA + blockIdx.z * (kM * kK) + blockIdx.x * (kTM * kK);
-    const InType* B = dB + blockIdx.z * (kK * kN);
-    const InType* gC_ptr =
-        dC + blockIdx.z * (kN * kP) + blockIdx.y * (kTP * kN);
-
-    InType* gD_ptr = dD + blockIdx.z * (kM * kP) + blockIdx.x * (kTM * kP) +
-                     (blockIdx.y * kTP);
-
-    extern __shared__ __align__(sizeof(double)) unsigned char shared_buf[];
-    auto* shm = reinterpret_cast<InType*>(shared_buf);
-
-    InType* sA_ptr = shm;
-    InType* sB_ptr = shm + SharedA::kNumel;
-    InType* sC_ptr = shm + SharedA::kNumel + SharedB::kNumel;
-    InType* sD_ptr = shm;
-
-    GIteratorA gAs(A);
-    SharedA sA(sA_ptr);
-    RegA rA;
-
-    SharedALoader load_sa;
-    RegALoader load_ra;
-
-    GIteratorB gBs(B);
-    SharedB sB(sB_ptr);
-    RegB rB;
-
-    SharedBLoader load_sb;
-    RegBLoader load_rb;
-
-    GIteratorC gCs(gC_ptr);
-    SharedC sC(sC_ptr);
-
-    SharedCLoader load_sc;
-    RegCLoader load_rc;
-    RegC rC;
-
-    GlobalD gD(gD_ptr);
-    SharedD sD(sD_ptr);
-    RegD rD;
-    RegDHalf rD_half;
-    StoreRegD store_rD;
-    StoreSharedD store_sD;
-
-    RegAcc acc;
-    RegAccCast acc_half;
-
-    ConvertAcc cast_acc;  // Convert acc to half precision
-    ConvertD convert_d;   // Convert D to half precision
-
-    for (int n = 0; n < GIteratorC::sc0; ++n) {
-        load_sc(gCs(n), sC);
-
-        for (int k = 0; k < GIteratorA::sc1; ++k) {
-            load_sa(gAs(k), sA);
-            load_sb(gBs(k, n), sB);
-            __copy_async();
-            __syncthreads();
-
-            load_ra(sA, rA);
-            load_rb(sB, rB);
-            __syncthreads();
-            gemm(rA, rB, acc);
-        }
-        load_rc(sC, rC);
-        __syncthreads();
-
-        cast_acc(acc, acc_half);
-
-        gemm(acc_half, rC, rD);
-        acc.clear();
-    }
-    __syncthreads();
-    convert_d(rD, rD_half);
-
-    store_rD(rD_half, sD);
-    __syncthreads();
-    store_sD(sD, gD);
+extern "C" __global__ void fused_two_gemms_kernel_)"
+       << in_type << "_" << acc_type << "_" << m << "_" << n << "_" << k << "_"
+       << p << R"((
+    const )"
+       << in_type << R"(* A,
+    const )"
+       << in_type << R"(* B,
+    const )"
+       << in_type << R"(* C,
+    )" << in_type
+       << R"(* D,
+    int m, int n, int k, int p) {
+    using Config = FusedTwoGemmsTraits<)"
+       << in_type << ", " << acc_type << R"(,
+        tl::RowMajor<2, 1>, )"
+       << m << ", " << n << ", " << k << ", " << p << R"(>;
+})";
+    return ss.str();
 }
 
 void fused_two_gemms(const torch::Tensor& A, const torch::Tensor& B,
@@ -226,16 +56,47 @@ void fused_two_gemms(const torch::Tensor& A, const torch::Tensor& B,
     const int64_t p = C.size(1);
 
     using WarpLayout = tl::RowMajor<2, 1>;
-
     using InType = __half;
     using AccType = float;
 
     std::string in_type = jit::get_type_string<InType>();
     std::string acc_type = jit::get_type_string<AccType>();
 
-    std::cout << "m: " << m << ", n: " << n << ", k: " << k << ", p: " << p
-              << std::endl
-              << "in_type: " << in_type << ", acc_type: " << acc_type
-              << std::endl;
+    // Generate kernel source
+    std::string kernel_source =
+        generate_fused_two_gemms_kernel_source(in_type, acc_type, m, n, k, p);
+
+    // Create unique kernel name
+    std::string kernel_name = "fused_two_gemms_kernel_" + in_type + "_" +
+                              acc_type + "_" + std::to_string(m) + "_" +
+                              std::to_string(n) + "_" + std::to_string(k) +
+                              "_" + std::to_string(p);
+
+    auto& jit = jit::JitCompiler::instance();
+    CUfunction kernel = jit.get_or_compile_kernel(kernel_name, kernel_source);
+
+    if (!kernel) {
+        throw std::runtime_error("Failed to compile or retrieve kernel");
+    }
+
+    int block_size = 128;  // Adjust based on your needs
+    int grid_size = (m * p + block_size - 1) / block_size;
+
+    // Properly cast the tensor data pointers to half precision
+    const InType* A_ptr =
+        reinterpret_cast<const InType*>(A.data_ptr<at::Half>());
+    const InType* B_ptr =
+        reinterpret_cast<const InType*>(B.data_ptr<at::Half>());
+    const InType* C_ptr =
+        reinterpret_cast<const InType*>(C.data_ptr<at::Half>());
+    InType* D_ptr = reinterpret_cast<InType*>(D.data_ptr<at::Half>());
+
+    void* args[] = {(void*)&A_ptr, (void*)&B_ptr, (void*)&C_ptr, (void*)&D_ptr,
+                    (void*)&m,     (void*)&n,     (void*)&k,     (void*)&p};
+
+    CUDA_DRIVER_CHECK(cuLaunchKernel(kernel, grid_size, 1, 1, block_size, 1, 1,
+                                     0, nullptr, args, nullptr));
+
+    LOG(INFO) << "Fused two gemms kernel launched successfully";
 }
 }  // namespace tilefusion::kernels

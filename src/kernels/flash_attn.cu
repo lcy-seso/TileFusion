@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 #include "cell/mod.hpp"
-#include "kernels/flash_attn.hpp"
+#include "kernels/ops.hpp"
 #include "types/mod.hpp"
 
 using namespace tilefusion;

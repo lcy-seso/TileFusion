@@ -4,7 +4,7 @@
 #pragma once
 
 #include "kernel_registry.hpp"
-#include "kernels/mod.hpp"
+#include "kernels/ops.hpp"
 
 namespace tilefusion ::kernels {
 
