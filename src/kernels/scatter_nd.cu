@@ -4,7 +4,7 @@
 #include "kernels/scatter_nd.hpp"
 #include "traits/base.hpp"
 
-#include <torch/script.h>
+// #include <torch/script.h>
 
 namespace tilefusion::kernels {
 
