@@ -5,12 +5,12 @@
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
 
-from .flash_attention import TiledFlashAttention
+from .flash_attention import FlashAttention
 from .gemm import gemm
 from .scatter_nd import scatter_nd
 
 __all__ = [
-    "TiledFlashAttention",
+    "FlashAttention",
     "gemm",
     "scatter_nd",
     "fused_two_gemms",

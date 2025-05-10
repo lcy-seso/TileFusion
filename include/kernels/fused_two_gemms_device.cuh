@@ -5,13 +5,13 @@
 #include "cell/mod.hpp"
 #include "types/mod.hpp"
 
+namespace tilefusion::kernels {
+
 using namespace tilefusion;
 using namespace cell;
 using namespace copy;
 using namespace compute;
 namespace tl = tile_layout;
-
-namespace tilefusion::kernels {
 
 template <typename InType_, typename AccType_, typename WarpLayout,  //
           const int kM_, const int kN_, const int kK_, const int kP_,
