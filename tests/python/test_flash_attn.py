@@ -14,115 +14,87 @@ import pytest
 import torch
 import math
 
-from tilefusion.ops import FlashAttention
-
 # import pdb
 
+import tilefusion
+from tests.python.common import random_tensor
 
-class FlashAttentionRef:
-    """Reference implementation of flash attention."""
+
+class AttentionRef:
+    """Reference implementation of multi-head attention."""
 
     def __init__(
         self,
-        tile_m: int,
-        tile_n: int,
-        tile_k: int,
-        tile_p: int,
+        length_q: int,
+        length_kv: int,
         softmax_scale: float,
-        causal: bool,
+        is_causal: bool = False,
     ) -> None:
-        """Initialize the flash attention.
+        """Initialize the multi-head attention.
 
         Args:
-            tile_m: Tile size for M dimension.
-            tile_n: Tile size for N dimension.
-            tile_k: Tile size for K dimension.
-            tile_p: Tile size for P dimension.
+            length_q: Length of the query sequence.
+            length_kv: Length of the key/value sequence.
             softmax_scale: Softmax scale.
-                The scaling of QK^T before applying softmax.
-                Default is 1.0 / sqrt(matrix_k).
-            causal: bool. Whether to apply causal mask.
+            is_causal: Whether to apply causal mask.
         """
-        self.tile_m = tile_m
-        self.tile_n = tile_n
-        self.tile_k = tile_k
-        self.tile_p = tile_p
-
+        self.is_causal = is_causal
+        self.mask = torch.triu(torch.ones(length_q, length_kv), diagonal=1)
         self.softmax_scale = softmax_scale
-        self.causal = causal
 
     def __call__(
         self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        device: str = "cuda",
+        queries: torch.Tensor,
+        keys: torch.Tensor,
+        values: torch.Tensor,
     ) -> torch.Tensor:
-        """Perform the forward pass of flash attention.
+        """Perform the forward pass of multi-head attention.
 
         Args:
-            query: Query tensor.
-            key: Key tensor.
-            value: Value tensor.
-            device: Device to run on.
+            queries: Query tensor, shape (batch_size, length_qk, hidden_qk).
+            keys: Key tensor, shape (batch_size, length_qk, hidden_v).
+            values: Value tensor, shape (batch_size, length_v, hidden_v).
 
         Returns:
             torch.Tensor: The attention output.
         """
-        length_qk = query.shape[0]
-        length_v = value.shape[0]
-        hidden_v = value.shape[1]
+        attn_scores = queries @ keys.transpose(1, 2)
+        if self.is_causal:
+            attn_scores.masked_fill_(self.mask.bool(), -torch.inf)
+        attn_weights = torch.softmax(attn_scores * self.softmax_scale, dim=-1)
+        return attn_weights @ values
 
-        output = torch.empty(length_qk, hidden_v, device=device)
-        iter_n = length_v // self.tile_n
 
-        prev_maxes = torch.zeros(length_qk, 1, device=device)
-        prev_sums = torch.zeros(length_qk, 1, device=device)
+def mha(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    softmax_scale: float,
+    causal: bool,
+) -> torch.Tensor:
+    """Compute multi-head attention using a reference implementation.
 
-        ks = torch.chunk(key, iter_n, dim=-1)
-        vs = torch.chunk(value, iter_n, dim=-2)
+    This is a helper function that creates an AttentionRef instance and applies
+    it to compute attention scores. Used as a reference implementation to
+    validate the flash attention implementation.
 
-        for chunk_idx in range(iter_n):
-            key_chunk = ks[chunk_idx]
-            value_chunk = vs[chunk_idx]
+    Args:
+        query: Query tensor of shape (batch_size, length_q, hidden_qk)
+        key: Key tensor of shape (batch_size, length_kv, hidden_qk)
+        value: Value tensor of shape (batch_size, length_kv, hidden_v)
+        softmax_scale: Scale factor applied before softmax
+                       (typically 1/sqrt(hidden_qk))
+        causal: Whether to apply causal masking to prevent attention to
+        future tokens
 
-            attn_weights = query @ key_chunk  # m * ktn
-
-            if self.causal:
-                # Create a causal mask for the attention weights.
-                mask = torch.tril(
-                    torch.ones_like(attn_weights), diagonal=0
-                ).bool()
-                attn_weights = torch.where(mask, attn_weights, float("-inf"))
-
-            attn_weights = attn_weights * self.softmax_scale
-
-            # reduce maxes
-            cur_maxes, _ = torch.max(attn_weights, dim=-1, keepdim=True)
-            exp_weights = torch.exp(attn_weights - cur_maxes)
-            # unnormalized attention score @ values
-            exp_values = exp_weights @ value_chunk
-            # move the normalization step to the very end of the attention
-            # computation.
-            cur_sums = torch.sum(exp_weights, dim=-1, keepdim=True)  # l(x_cur)
-
-            # =========   renormalization  ======================#
-            new_maxes = torch.max(cur_maxes, prev_maxes)  # update m(x)
-            # renormalization factor for the previous block
-            renorm_prev = torch.exp(prev_maxes - new_maxes)
-            # renormalization factor for the current block
-            renorm_cur = torch.exp(cur_maxes - new_maxes)
-
-            # update normalization factor l(x)
-            new_sums = renorm_prev * prev_sums + renorm_cur * cur_sums
-
-            output = output * prev_sums * renorm_prev + renorm_cur * exp_values
-            output /= new_sums
-
-            prev_sums = new_sums
-            prev_maxes = new_maxes
-
-        return output
+    Returns:
+        torch.Tensor: Output tensor of shape (batch_size, length_q, hidden_v)
+            containing the attention-weighted combination of values
+    """
+    length_q = query.shape[1]
+    length_kv = key.shape[1]
+    mha = AttentionRef(length_q, length_kv, softmax_scale, causal)
+    return mha(query, key, value)
 
 
 @pytest.fixture(autouse=True)
@@ -132,56 +104,69 @@ def setup() -> None:
 
 
 def run_flash_attention(
-    length_qk: int,
-    length_v: int,
+    batch_size: int,
+    length_q: int,
+    length_kv: int,
     hidden_qk: int,
     hidden_v: int,
-    tile_m: int,
-    tile_n: int,
-    tile_k: int,
-    tile_p: int,
+    tile_length_q: int,
+    tile_hidden_qk: int,
+    tile_length_kv: int,
+    tile_hidden_v: int,
     softmax_scale: float,
     causal: bool,
     eps: float = 8e-2,
 ) -> None:
-    """Run flash attention test with given dimensions.
+    """Run flash attention test with given parameters.
+
+    This function creates random tensors for query, key, and value,
+    then compares the output of the flash attention implementation
+    against a reference implementation.
 
     Args:
-        length_qk: Length of the query sequence.
-        length_v: Length of the key/value sequence.
-        hidden_qk: Hidden dimension of the query and key.
-        hidden_v: Hidden dimension of the value.
-        tile_m: Tile size for M dimension.
-        tile_n: Tile size for N dimension.
-        tile_k: Tile size for K dimension.
-        tile_p: Tile size for P dimension.
-        softmax_scale: Softmax scale.
-            The scaling of QK^T before applying softmax.
-            Default is 1.0 / sqrt(matrix_k).
-        causal: bool. Whether to apply causal mask.
-        eps: float. The epsilon value for the test.
+        batch_size: Number of sequences in the batch
+        length_q: Length of query sequence
+        length_kv: Length of key/value sequence
+        hidden_qk: Hidden dimension size for query and key
+        hidden_v: Hidden dimension size for value
+        tile_length_q: Tile size for query sequence length
+        tile_hidden_qk: Tile size for query/key hidden dimension
+        tile_length_kv: Tile size for key/value sequence length
+        tile_hidden_v: Tile size for value hidden dimension
+        softmax_scale: Scale factor for attention scores before softmax
+        causal: Whether to use causal attention masking
+        eps: Tolerance for numerical comparison between implementations
+
+    Returns:
+        None. Raises AssertionError if outputs don't match within tolerance.
     """
-    query = torch.randn(
-        length_qk, hidden_qk, dtype=torch.float16, device="cuda"
-    )
-    key = torch.randn(length_qk, hidden_v, dtype=torch.float16, device="cuda")
-    value = torch.randn(length_v, hidden_v, dtype=torch.float16, device="cuda")
+    if length_q != length_kv:
+        raise ValueError("length_q must be equal to length_kv")
 
-    flash_attn = FlashAttentionRef(
-        tile_m,
-        tile_n,
-        tile_k,
-        tile_p,
-        softmax_scale,
-        causal,
-    )
-    ref_output = flash_attn(query, key, value)
+    query = random_tensor((batch_size, length_q, hidden_qk))
+    key = random_tensor((batch_size, length_kv, hidden_qk))
+    value = random_tensor((batch_size, length_kv, hidden_v))
 
-    flash_attention = FlashAttention(
+    ref_output = mha(query, key, value, softmax_scale, causal)
+
+    print("ref_output")  # noqa: T201
+    print(ref_output)  # noqa: T201
+
+    output = tilefusion.ops.flash_attention(
+        query,
+        key,
+        value,
+        tile_length_q=tile_length_q,
+        tile_length_kv=tile_length_kv,
+        tile_hidden_qk=tile_hidden_qk,
+        tile_hidden_v=tile_hidden_v,
         softmax_scale=softmax_scale,
         causal=causal,
     )
-    output = flash_attention(query, key, value)
+
+    print("output")  # noqa: T201
+    # print(output)  # noqa: T201
+
     assert torch.allclose(output, ref_output, atol=eps)
 
 
@@ -237,14 +222,15 @@ def test_flash_attention(test_case: dict[str, Any]) -> None:
         test_case: Dictionary containing test parameters
     """
     run_flash_attention(
-        length_qk=test_case["length_qk"],
-        length_v=test_case["length_v"],
+        batch_size=test_case["batch_size"],
+        length_q=test_case["length_q"],
+        length_kv=test_case["length_kv"],
         hidden_qk=test_case["hidden_qk"],
         hidden_v=test_case["hidden_v"],
-        tile_m=test_case["tile_m"],
-        tile_n=test_case["tile_n"],
-        tile_k=test_case["tile_k"],
-        tile_p=test_case["tile_p"],
+        tile_length_q=test_case["tile_length_q"],
+        tile_hidden_qk=test_case["tile_hidden_qk"],
+        tile_length_kv=test_case["tile_length_kv"],
+        tile_hidden_v=test_case["tile_hidden_v"],
         softmax_scale=test_case["softmax_scale"],
         causal=test_case["causal"],
     )
@@ -254,14 +240,15 @@ if __name__ == "__main__":
     # pytest.main([__file__, "-v"])
 
     run_flash_attention(
-        length_qk=64,
-        length_v=128,
-        hidden_qk=128,
-        hidden_v=128,
-        tile_m=64,
-        tile_n=128,
-        tile_k=128,
-        tile_p=128,
+        batch_size=1,
+        length_q=256,
+        length_kv=256,
+        hidden_qk=64,
+        hidden_v=64,
+        tile_length_q=128,
+        tile_hidden_qk=128,
+        tile_length_kv=64,
+        tile_hidden_v=64,
         softmax_scale=1.0 / math.sqrt(128),
         causal=False,
     )

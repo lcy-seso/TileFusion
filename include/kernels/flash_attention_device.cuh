@@ -16,82 +16,80 @@ namespace tilefusion::kernels {
 template <typename InType, typename AccType, typename OutType,
           typename WholeShape, typename CtaTileShape>
 struct FlashAttentionTraits {
-    static constexpr int kSharedAccess = 64;
-
-    using BaseShape = traits::BaseTileShape<InType>;
-
     using WarpLayout = tl::RowMajor<4, 1>;
 
     static constexpr int kWarpPerRow = tl::num_rows<WarpLayout>;
     static constexpr int kWarpPerCol = tl::num_cols<WarpLayout>;
-    static_assert(kWarpPerCol == 1, "WarpPerCol must be 1");
-
+    static_assert(kWarpPerCol == 1,
+                  "warps must be arranged as a column vector.");
     static constexpr int kThreads = tl::get_numel<WarpLayout> * 32;
 
-    static constexpr int kM = dim_size<0, WholeShape>;
-    static constexpr int kN = dim_size<1, WholeShape>;
-    static constexpr int kK = dim_size<2, WholeShape>;
-    static constexpr int kP = dim_size<3, WholeShape>;
+    static constexpr int kSharedAccess = 64;
+
+    using BaseShape = traits::BaseTileShape<InType>;
+
+    static constexpr int kM = dim_size<0, WholeShape>;  // query length
+    static constexpr int kN = dim_size<1, WholeShape>;  // key/value length
+    static constexpr int kK = dim_size<2, WholeShape>;  // query/key hidden dim
+    static constexpr int kP = dim_size<3, WholeShape>;  // value hidden dim
 
     static constexpr int kTM = dim_size<0, CtaTileShape>;
     static constexpr int kTN = dim_size<1, CtaTileShape>;
     static constexpr int kTK = dim_size<2, CtaTileShape>;
     static constexpr int kTP = dim_size<3, CtaTileShape>;
 
-    // operand A
-    using GlobalA = GlobalTile<InType, tl::RowMajor<kTM, kK>>;
-    // chunk the K dimension to fit into shared memory
-    using GIteratorA = GTileIterator<GlobalA, TileShape<kTM, kTK>>;
+    // query
+    using GlobalQ = GlobalTile<InType, tl::RowMajor<kTM, kK>>;
+    using GIteratorQ = GTileIterator<GlobalQ, TileShape<kTM, kTK>>;
 
-    using SharedA =
+    using SharedQ =
         SharedTile<InType, tl::RowMajor<kTM, kTK>, true, kSharedAccess>;
 
-    static constexpr int kAMs = kTM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kAKs = kTK / BaseShape::kCols;
-    using RegA = RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kAMs, kAKs>>;
+    static constexpr int kQM = kTM / kWarpPerRow / BaseShape::kRows;
+    static constexpr int kQK = kTK / BaseShape::kCols;
+    using RegQ = RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kQM, kQK>>;
 
-    using SharedALoader = GlobalToSharedLoader<SharedA, WarpLayout>;
-    using RegALoader =
-        SharedToRegLoader<RegA, WarpLayout, WarpReuse::kRowReuseCont>;
+    using SharedQLoader = GlobalToSharedLoader<SharedQ, WarpLayout>;
+    using RegQLoader =
+        SharedToRegLoader<RegQ, WarpLayout, WarpReuse::kRowReuseCont>;
 
-    // operand B
-    using GlobalB = GlobalTile<InType, tl::ColMajor<kK, kN>>;
-    using GIteratorB = GTileIterator<GlobalB, TileShape<kTK, kTN>>;
-    using SharedB =
+    // key
+    using GlobalK = GlobalTile<InType, tl::ColMajor<kK, kN>>;
+    using GIteratorK = GTileIterator<GlobalK, TileShape<kTK, kTN>>;
+    using SharedK =
         SharedTile<InType, tl::ColMajor<kTK, kTN>, true, kSharedAccess>;
 
-    static constexpr int kBKs = kTK / BaseShape::kRows;
-    static constexpr int kBNs = kTN / kWarpPerCol / BaseShape::kCols;
-    using RegB = RegTile<BaseTileColMajor<InType>, tl::ColMajor<kBKs, kBNs>>;
+    static constexpr int kKMs = kTK / BaseShape::kRows;
+    static constexpr int kKNs = kTN / kWarpPerCol / BaseShape::kCols;
+    using RegK = RegTile<BaseTileColMajor<InType>, tl::ColMajor<kKMs, kKNs>>;
 
-    using SharedBLoader = GlobalToSharedLoader<SharedB, WarpLayout>;
-    using RegBLoader =
-        SharedToRegLoader<RegB, WarpLayout, WarpReuse::kColReuseCont>;
+    using SharedKLoader = GlobalToSharedLoader<SharedK, WarpLayout>;
+    using RegKLoader =
+        SharedToRegLoader<RegK, WarpLayout, WarpReuse::kColReuseCont>;
 
-    // operand C
-    using GlobalC = GlobalTile<InType, tl::ColMajor<kN, kTP>>;
-    // chunk the N dimension to fit into shared memory
-    using GIteratorC = GTileIterator<GlobalC, TileShape<kTN, kTP>>;
-    using SharedC =
+    // value
+    using GlobalV = GlobalTile<InType, tl::ColMajor<kN, kTP>>;
+    using GIteratorV = GTileIterator<GlobalV, TileShape<kTN, kTP>>;
+    using SharedV =
         SharedTile<InType, tl::ColMajor<kTN, kTP>, true, kSharedAccess>;
 
-    static constexpr int kCNs = kTN / BaseShape::kRows;
-    static constexpr int kCPs = kTP / kWarpPerCol / BaseShape::kCols;
-    using RegC = RegTile<BaseTileColMajor<InType>, tl::ColMajor<kCNs, kCPs>>;
+    static constexpr int kVN = kTN / BaseShape::kRows;
+    static constexpr int kVP = kTP / kWarpPerCol / BaseShape::kCols;
+    using RegV = RegTile<BaseTileColMajor<InType>, tl::ColMajor<kVN, kVP>>;
 
-    using SharedCLoader = GlobalToSharedLoader<SharedC, WarpLayout>;
-    using RegCLoader =
-        SharedToRegLoader<RegC, WarpLayout, WarpReuse::kColReuseCont>;
+    using SharedVLoader = GlobalToSharedLoader<SharedV, WarpLayout>;
+    using RegVLoader =
+        SharedToRegLoader<RegV, WarpLayout, WarpReuse::kColReuseCont>;
 
-    // output D
-    using GlobalD = GlobalTile<OutType, tl::RowMajor<kTM, kTP>>;
+    // output
+    using GlobalO = GlobalTile<OutType, tl::RowMajor<kTM, kTP>>;
 
-    static constexpr int kDMs = kTM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kDPs = kTP / kWarpPerCol / BaseShape::kCols;
-    using RegD = RegTile<BaseTileRowMajor<AccType>, tl::RowMajor<kDMs, kDPs>>;
-    using RegDCast =
-        RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kDMs, kDPs>>;
-    using DStorer = RegToGlobalStorer<GlobalD, RegDCast, WarpLayout>;
+    static constexpr int kOMs = kTM / kWarpPerRow / BaseShape::kRows;
+    static constexpr int kOPs = kTP / kWarpPerCol / BaseShape::kCols;
+    using RegO = RegTile<BaseTileRowMajor<OutType>, tl::RowMajor<kOMs, kOPs>>;
+    using RegOCast =
+        RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kOMs, kOPs>>;
+    using OStorer = RegToGlobalStorer<GlobalO, RegOCast, WarpLayout>;
 
     static constexpr int kAccMs = kTM / kWarpPerRow / BaseShape::kRows;
     static constexpr int kAccNs = kTN / kWarpPerCol / BaseShape::kCols;
@@ -102,14 +100,11 @@ struct FlashAttentionTraits {
     using RegAccCast =
         RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kAccMs, kAccNs>>;
 
-    using RegAccPrinter = RegTilePrinter<RegAccCast, tl::Layout::kRowMajor>;
-
     // Convert the accumulator to half
-    using ConvertHalf = RegTileConvert<RegAcc, RegAccCast>;
-    using ConvertO = RegTileConvert<RegD, RegDCast>;
+    using ConvertAcc = RegTileConvert<RegAcc, RegAccCast>;
+    using ConvertO = RegTileConvert<RegO, RegOCast>;
 
     using RegVec = RegTile<InType, tl::RowMajor<kAccMs, 2>>;
-    using RegVecPrinter = RegVecPrinter<RegVec>;
 
     using CopyVec = BaseTileCopy<RegVec>;
     using RowMax = MaxReduce<RegAccCast, tl::Layout::kRowMajor>;
@@ -117,11 +112,11 @@ struct FlashAttentionTraits {
     using RowSum = SumReduce<RegAccCast, tl::Layout::kRowMajor>;
 
     using Sub = BroadcastSub<RegVec, RegAccCast, tl::Layout::kRowMajor>;
-    using Mul = BroadcastMul<RegVec, RegDCast, tl::Layout::kRowMajor>;
-    using Div = BroadcastDiv<RegVec, RegDCast, tl::Layout::kRowMajor>;
+    using Mul = BroadcastMul<RegVec, RegOCast, tl::Layout::kRowMajor>;
+    using Div = BroadcastDiv<RegVec, RegOCast, tl::Layout::kRowMajor>;
 
     using Exp = RegTileExp<RegAccCast>;
-    using Add = RegTileAdd<RegDCast>;
+    using Add = RegTileAdd<RegOCast>;
 
     using VecMax = BaseTileMax<RegVec>;
     using VecAdd = BaseTileAdd<RegVec>;
@@ -137,10 +132,10 @@ struct FlashAttentionTraits {
 template <typename InType, typename AccType, typename OutType,
           typename KeTraits>
 __global__ void ke_flash_attention(const InType* dQ, const InType* dK,
-                                   const InType* dV, OutType* dO, int kM,
-                                   int kN, int kK, int kP, int kTM, int kTN,
-                                   int kTK, int kTP, float softmax_scale,
-                                   bool causal) {
+                                   const InType* dV, OutType* dO,       //
+                                   int kM, int kN, int kK, int kP,      //
+                                   int kTM, int kTN, int kTK, int kTP,  //
+                                   float softmax_scale, bool causal) {
     // Advance to the global data tile to the current CTA.
     const InType* Q = dQ + blockIdx.z * (kM * kK) + blockIdx.x * (kTM * kK);
     const InType* K = dK + blockIdx.z * (kK * kN);
@@ -152,6 +147,11 @@ __global__ void ke_flash_attention(const InType* dQ, const InType* dK,
 
     extern __shared__ __align__(sizeof(double)) unsigned char shared_buf[];
     auto* shm = reinterpret_cast<InType*>(shared_buf);
+
+    if (thread(0)) {
+        printf("kM: %d, kN: %d, kK: %d, kP: %d\n", kM, kN, kK, kP);
+        printf("kTM: %d, kTN: %d, kTK: %d, kTP: %d\n", kTM, kTN, kTK, kTP);
+    }
 
     InType* sQ_ptr = shm;
     InType* sK_ptr = shm + KeTraits::SharedQ::kNumel;
