@@ -53,7 +53,8 @@ TILEFUSION_EXPORT void fused_two_gemms(const torch::Tensor& A,
 // declare the host function for flash attention
 TILEFUSION_EXPORT void flash_attention(
     const torch::Tensor& Q, const torch::Tensor& K, const torch::Tensor& V,
-    torch::Tensor& O, int64_t tile_q, int64_t tile_kv, int64_t tile_hidden_qk,
-    int64_t tile_hidden_v, double softmax_scale, bool causal);
+    torch::Tensor& O, int64_t tile_length_q, int64_t tile_length_kv,
+    int64_t tile_hidden_qk, int64_t tile_hidden_v, double softmax_scale,
+    bool causal);
 
 }  // namespace tilefusion::kernels

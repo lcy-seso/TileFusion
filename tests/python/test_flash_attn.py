@@ -165,7 +165,7 @@ def run_flash_attention(
     )
 
     print("output")  # noqa: T201
-    # print(output)  # noqa: T201
+    print(output)  # noqa: T201
 
     assert torch.allclose(output, ref_output, atol=eps)
 
@@ -243,12 +243,12 @@ if __name__ == "__main__":
         batch_size=1,
         length_q=256,
         length_kv=256,
-        hidden_qk=64,
-        hidden_v=64,
+        hidden_qk=128,
+        hidden_v=128,
         tile_length_q=128,
         tile_hidden_qk=128,
-        tile_length_kv=64,
-        tile_hidden_v=64,
+        tile_length_kv=128,
+        tile_hidden_v=128,
         softmax_scale=1.0 / math.sqrt(128),
         causal=False,
     )
