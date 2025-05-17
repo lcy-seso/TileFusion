@@ -1,43 +1,53 @@
 #!/bin/bash
 
-build_dir="_build"
+proj_root_dir=$(pwd)
+build_dir="$proj_root_dir/build/temp.linux-x86_64-cpython-312"
 
-if [ ! -d "$build_dir" ]; then
-   mkdir $build_dir
+lib_dir="$build_dir/src"
+lib_name="libtilefusion.so"
+
+source_lib="$lib_dir/$lib_name"
+target_lib="$proj_root_dir/tilefusion/$lib_name"
+
+if [ -f "$source_lib" ]; then
+    rm "$source_lib"
+fi
+
+if [ -f "$target_lib" ]; then
+    rm "$target_lib"
 fi
 
 cd $build_dir
 
-if [ -d "CMakefile" ]; then
-   rm -rf CMakefile
+if [ -f "CMakeCache.txt" ]; then
+    rm CMakeCache.txt
 fi
 
-if [ -f "CMakeCache" ]; then
-   rm CMakeCache
+if [ -d "CMakeFiles" ]; then
+    rm -rf CMakeFiles
 fi
 
+cmake -DCMAKE_BUILD_TYPE=Debug ../../ 2>&1 | tee ../../build.log
 
-cmake -DCMAKE_C_COMPILER=`which gcc` \
-   -DCMAKE_CXX_COMPILER=`which g++` \
-   ../../
+make -j32 2>&1 | tee -a ../../build.log
 
-# TEST="tests/cpp/test_swizzled_copy"
-TEST="tests/cpp/test_tiled_matrix_layout"
-
-if [ -f "$TEST" ]; then
-    rm $TEST
+if [ -f "$source_lib" ]; then
+    echo "Copying $source_lib to $target_lib"
+    cp "$source_lib" "$target_lib"
+else
+    echo "Failed to build TileFusion library"
+    exit 1
 fi
 
-make -j24 2>&1 | tee ../make.log
+# cd tests/cpp/
 
-if [ -f "$TEST" ]; then
-    ./$TEST 2>&1 | tee ../test.log
-fi
+# GLOG_logtostderr=1 GLOG_colorlogtostderr=1 GLOG_v=3 \
+#     ./test_jit 2>&1 | tee ../../test.log
 
-cd ..
+cd $proj_root_dir
 
-# python3 setup.py clean
-# export CUDA_ARCH_LIST="8.0 8.6 8.9 9.0"
+# exit 0
 
-# python3 setup.py develop 2>&1 | tee build/build.log
-# python3 setup.py build bdist_wheel 2>&1 | tee build.log
+# python setup.py develop 2>&1 | tee build.log
+
+./test.sh 2>&1 | tee test.log
