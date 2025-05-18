@@ -18,8 +18,6 @@ using GemmShape = TileShape<kM, kN, kK>;
 template <typename InType, typename AccType, typename WholeShape,
           typename CtaTileShape, const int kRK, typename WarpLayout>
 struct KeGemmTraits {
-    using BaseShape = traits::BaseTileShape<InType>;
-
     static constexpr int kThreads = tl::get_numel<WarpLayout> * 32;
     static constexpr int kWarpPerRow = tl::num_rows<WarpLayout>;
     static constexpr int kWarpPerCol = tl::num_cols<WarpLayout>;
@@ -32,27 +30,18 @@ struct KeGemmTraits {
     static constexpr int kTN = dim_size<1, CtaTileShape>;
     static constexpr int kTK = dim_size<2, CtaTileShape>;
 
-    static const bool kSwizzled = true;
-
     // Total data access for operand A in global memory
     using GlobalA = GlobalTile<InType, tl::RowMajor<kTM, kK, kK>>;
     // Access a single global tile for operand A
     using GIteratorA = GTileIterator<GlobalA, TileShape<kTM, kTK>>;
 
+    using SharedLayout = tl::BlockRowMajor<
+        tl::RowMajor<16, 64>,
+        SwizzledLayout<tl::RowMajor<8, 64>, Swizzle<3, 3, 3>>>;
+
     // Shared Tile for operand A
-    using SharedA = SharedTile<InType, tl::RowMajor<kTM, kTK>, kSwizzled>;
-    // Access a single register tile for operand A
+    using SharedA = SharedTile<InType, SharedLayout>;
     using SIteratorA = STileIterator<SharedA, TileShape<kTM, kRK>>;
-
-    // Register tile for a single thread of operand A
-    static constexpr int kAMs = kTM / kWarpPerRow / BaseShape::kRows;
-    static constexpr int kAKs = kRK / BaseShape::kCols;
-    using RegA = RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kAMs, kAKs>>;
-
-    // Loaders for operand A
-    using G2SLoaderA = GlobalToSharedLoader<SharedA, WarpLayout>;
-    using S2RLoaderA =
-        SharedToRegLoader<RegA, WarpLayout, WarpReuse::kRowReuseCont>;
 
     // Total data access for operand B in global memory
     using GlobalB = GlobalTile<InType, tl::ColMajor<kK, kTN, kK>>;
@@ -60,9 +49,13 @@ struct KeGemmTraits {
     using GIteratorB = GTileIterator<GlobalB, TileShape<kTK, kTN>>;
 
     // Shared Tile for operand B
-    using SharedB = SharedTile<InType, tl::ColMajor<kTK, kTN>, kSwizzled>;
-    // Access a single register tile for operand B
+    using SharedB = SharedTile<InType, SharedLayout>;
     using SIteratorB = STileIterator<SharedB, TileShape<kRK, kTN>>;
+
+    // Global Tile for output C
+    using GlobalC = GlobalTile<AccType, tl::RowMajor<kTM, kTN, kN>>;
+    // Shared Tile for output C
+    using SharedC = SharedTile<AccType, SharedLayout>;
 
     static_assert(GIteratorA::sc1 == GIteratorB::sc0,
                   "mismatched K dimension!");
@@ -70,23 +63,31 @@ struct KeGemmTraits {
                   "mismatched K dimension!");
 
     // Register tile for a single thread of operand A
+    using MmaAtom = MmaAtom<InType, InType, AccType, MMA_ATOM_16x16x16>;
+    using BaseShape = MmaAtom::BaseTile;
+
+    static constexpr int kAMs = kTM / kWarpPerRow / BaseShape::kRows;
+    static constexpr int kAKs = kRK / BaseShape::kCols;
+    using RegA = RegTile<BaseTileRowMajor<InType>, tl::RowMajor<kAMs, kAKs>>;
+
+    // Register tile for a single thread of operand A
     static constexpr int kBKs = kRK / BaseShape::kRows;
     static constexpr int kBNs = kTN / kWarpPerCol / BaseShape::kCols;
     using RegB = RegTile<BaseTileColMajor<InType>, tl::ColMajor<kBKs, kBNs>>;
-
-    using G2SLoaderB = GlobalToSharedLoader<SharedB, WarpLayout>;
-    using S2RLoaderB =
-        SharedToRegLoader<RegB, WarpLayout, WarpReuse::kColReuseCont>;
-
-    // Global Tile for output C
-    using GlobalC = GlobalTile<AccType, tl::RowMajor<kTM, kTN, kN>>;
-    // Shared Tile for output C
-    using SharedC = SharedTile<AccType, tl::RowMajor<kTM, kTN>, kSwizzled>;
 
     // Register Tile for output C
     static constexpr int kCMs = kTM / kWarpPerRow / BaseShape::kRows;
     static constexpr int kCNs = kTN / kWarpPerCol / BaseShape::kCols;
     using RegC = RegTile<BaseTileRowMajor<AccType>, tl::RowMajor<kCMs, kCNs>>;
+
+    /// Loaders and Storers for operand A, B and C
+    using G2SLoaderA = GlobalToSharedLoader<SharedA, WarpLayout>;
+    using S2RLoaderA =
+        SharedToRegLoader<RegA, WarpLayout, WarpReuse::kRowReuseCont>;
+
+    using G2SLoaderB = GlobalToSharedLoader<SharedB, WarpLayout>;
+    using S2RLoaderB =
+        SharedToRegLoader<RegB, WarpLayout, WarpReuse::kColReuseCont>;
 
     using R2SStorerC = RegToSharedStorer<RegC, WarpLayout>;
     using S2GStorerC = SharedToGlobalStorer<SharedC, WarpLayout>;
@@ -102,7 +103,8 @@ template <typename InType, typename AccType,                  //
           typename SharedB, typename RegB,                    //
           typename G2SLoaderB, typename S2RLoaderB,           //
           typename GlobalC, typename SharedC, typename RegC,  //
-          typename R2SStorerC, typename S2GStorerC>
+          typename R2SStorerC, typename S2GStorerC,           //
+          typename MmaAtom>
 __global__ void gemm(const InType* dA, const InType* dB, AccType* dC) {
     int offset_a = blockIdx.x * kTM * kK;
     int offset_b = blockIdx.y * kTN * kK;
@@ -149,7 +151,7 @@ __global__ void gemm(const InType* dA, const InType* dB, AccType* dC) {
             s2r_a(sAs(k2), rA);
             s2r_b(sBs(k2), rB);
 
-            compute::gemm(rA, rB, acc);
+            gemm<MmaAtom>(rA, rB, acc);
         }
     }
     r2s_c(acc, sC);
