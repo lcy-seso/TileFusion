@@ -120,7 +120,7 @@ struct is_col_major {
 };
 
 template <typename OuterLayout_, typename InnerLayout_>
-struct BlockRowMajor {
+struct BlockMatrxLayout {
     using InnerLayout = InnerLayout_;
     using OuterLayout = OuterLayout_;
 
@@ -130,10 +130,6 @@ struct BlockRowMajor {
     static constexpr int kInnerRows = InnerLayout_::kRows;
     static constexpr int kInnerCols = InnerLayout_::kCols;
 
-    static_assert(is_row_major<OuterLayout>::value,
-                  "OuterLayout must be row major");
-    static_assert(is_row_major<InnerLayout>::value,
-                  "InnerLayout must be row major");
     static_assert(kRows % kInnerRows == 0,
                   "OuterLayout rows must be divisible by InnerLayout rows");
     static_assert(kCols % kInnerCols == 0,
@@ -145,8 +141,12 @@ struct BlockRowMajor {
     static constexpr int kTileRows = kRows / kInnerRows;
     static constexpr int kTileCols = kCols / kInnerCols;
 
-    static constexpr int kRowStride = kTileCols * kInnerNumel;
-    static constexpr int kColStride = kInnerNumel;
+    static constexpr int kRowStride = is_row_major<OuterLayout>::value
+                                          ? kTileCols * kInnerNumel
+                                          : kInnerNumel;
+    static constexpr int kColStride = is_row_major<InnerLayout>::value
+                                          ? kInnerNumel
+                                          : kTileRows * kInnerNumel;
 
     HOST_DEVICE int operator()(int i, int j) const {
         const int outer_i = RowDivMod::div(i);
@@ -158,124 +158,44 @@ struct BlockRowMajor {
     }
 
   private:
-    static constexpr bool is_pow2_rows = (kInnerRows & (kInnerRows - 1)) == 0;
-    static constexpr bool is_pow2_cols = (kInnerCols & (kInnerCols - 1)) == 0;
+    static constexpr bool kInnerRowsIsPow2 =
+        (kInnerRows & (kInnerRows - 1)) == 0;
+    static constexpr bool kInnerColsIsPow2 =
+        (kInnerCols & (kInnerCols - 1)) == 0;
 
-    using RowDivMod = DivModSelector<is_pow2_rows, kInnerRows>;
-    using ColDivMod = DivModSelector<is_pow2_cols, kInnerCols>;
-
-    using BlockOuter =
-        MatrixLayout<kTileRows, kTileCols, kRowStride, kColStride>;
-    BlockOuter outer_;
-    InnerLayout inner_;
-};
-
-template <typename InnerLayout_, typename OuterLayout_>
-struct BlockColMajor {
-    using InnerLayout = InnerLayout_;
-    using OuterLayout = OuterLayout_;
-
-    static constexpr int kRows = OuterLayout_::kRows;
-    static constexpr int kCols = OuterLayout_::kCols;
-
-    static constexpr int kInnerRows = InnerLayout_::kRows;
-    static constexpr int kInnerCols = InnerLayout_::kCols;
-
-    static_assert(is_col_major<OuterLayout>::value,
-                  "OuterLayout must be column major");
-    static_assert(is_col_major<InnerLayout>::value,
-                  "InnerLayout must be column major");
-    static_assert(kRows % kInnerRows == 0,
-                  "OuterLayout rows must be divisible by InnerLayout rows");
-    static_assert(kCols % kInnerCols == 0,
-                  "OuterLayout cols must be divisible by InnerLayout cols");
-
-    static constexpr int kInnerNumel = InnerLayout_::kNumel;
-    static constexpr Layout kType = OuterLayout::kType;
-
-    static constexpr int kTileRows = kRows / kInnerRows;
-    static constexpr int kTileCols = kCols / kInnerCols;
-
-    static constexpr int kRowStride = kInnerNumel;
-    static constexpr int kColStride = kTileRows * kInnerNumel;
-
-    HOST_DEVICE int operator()(int i, int j) const {
-        const int outer_i = RowDivMod::div(i);
-        const int inner_i = RowDivMod::mod(i);
-        const int outer_j = ColDivMod::div(j);
-        const int inner_j = ColDivMod::mod(j);
-
-        return outer_(outer_i, outer_j) + inner_(inner_i, inner_j);
-    }
-
-  private:
-    static constexpr bool is_pow2_rows = (kInnerRows & (kInnerRows - 1)) == 0;
-    static constexpr bool is_pow2_cols = (kInnerCols & (kInnerCols - 1)) == 0;
-
-    using RowDivMod = DivModSelector<is_pow2_rows, kInnerRows>;
-    using ColDivMod = DivModSelector<is_pow2_cols, kInnerCols>;
+    using RowDivMod = DivModSelector<kInnerRowsIsPow2, kInnerRows>;
+    using ColDivMod = DivModSelector<kInnerColsIsPow2, kInnerCols>;
 
     using BlockOuter =
         MatrixLayout<kTileRows, kTileCols, kRowStride, kColStride>;
     BlockOuter outer_;
+
     InnerLayout inner_;
 };
 
 template <typename OuterLayout_, typename InnerLayout_>
-struct BlockMixedLayout {
-    static_assert((is_row_major<OuterLayout_>::value &&
-                   is_col_major<InnerLayout_>::value) ||
-                      (is_col_major<OuterLayout_>::value &&
-                       is_row_major<InnerLayout_>::value),
-                  "Layouts must be mixed (one row major, one column major)");
+concept BlockRowMajorLayout =
+    is_row_major<OuterLayout_>::value && is_row_major<InnerLayout_>::value;
 
-    using InnerLayout = InnerLayout_;
-    using OuterLayout = OuterLayout_;
+template <typename OuterLayout_, typename InnerLayout_>
+concept BlockColMajorLayout =
+    is_col_major<OuterLayout_>::value && is_col_major<InnerLayout_>::value;
 
-    static constexpr int kRows = OuterLayout_::kRows;
-    static constexpr int kCols = OuterLayout_::kCols;
+template <typename OuterLayout_, typename InnerLayout_>
+concept BlockMixedLayout =
+    (is_row_major<OuterLayout_>::value && is_col_major<InnerLayout_>::value) ||
+    (is_col_major<OuterLayout_>::value && is_row_major<InnerLayout_>::value);
 
-    static constexpr int kInnerRows = InnerLayout_::kRows;
-    static constexpr int kInnerCols = InnerLayout_::kCols;
+template <typename OuterLayout_, typename InnerLayout_>
+    requires BlockRowMajorLayout<OuterLayout_, InnerLayout_>
+using BlockRowMajor = BlockMatrxLayout<OuterLayout_, InnerLayout_>;
 
-    static_assert(kRows % kInnerRows == 0,
-                  "OuterLayout rows must be divisible by InnerLayout rows");
-    static_assert(kCols % kInnerCols == 0,
-                  "OuterLayout cols must be divisible by InnerLayout cols");
+template <typename OuterLayout_, typename InnerLayout_>
+    requires BlockColMajorLayout<OuterLayout_, InnerLayout_>
+using BlockColMajor = BlockMatrxLayout<OuterLayout_, InnerLayout_>;
 
-    static constexpr int kInnerNumel = InnerLayout_::kNumel;
-    static constexpr Layout kType = OuterLayout::kType;
-
-    static constexpr int kTileRows = kRows / kInnerRows;
-    static constexpr int kTileCols = kCols / kInnerCols;
-
-    static constexpr bool kIsRowMajor = is_row_major<OuterLayout>::value;
-
-    static constexpr int kRowStride =
-        kIsRowMajor ? kTileCols * kInnerNumel : kInnerNumel;
-    static constexpr int kColStride =
-        kIsRowMajor ? kInnerNumel : kTileRows * kInnerNumel;
-
-    HOST_DEVICE int operator()(int i, int j) const {
-        const int outer_i = RowDivMod::div(i);
-        const int inner_i = RowDivMod::mod(i);
-        const int outer_j = ColDivMod::div(j);
-        const int inner_j = ColDivMod::mod(j);
-
-        return outer_(outer_i, outer_j) + inner_(inner_i, inner_j);
-    }
-
-  private:
-    static constexpr bool is_pow2_rows = (kInnerRows & (kInnerRows - 1)) == 0;
-    static constexpr bool is_pow2_cols = (kInnerCols & (kInnerCols - 1)) == 0;
-
-    using RowDivMod = DivModSelector<is_pow2_rows, kInnerRows>;
-    using ColDivMod = DivModSelector<is_pow2_cols, kInnerCols>;
-
-    using BlockOuter =
-        MatrixLayout<kTileRows, kTileCols, kRowStride, kColStride>;
-    BlockOuter outer_;
-    InnerLayout inner_;
-};
+template <typename OuterLayout_, typename InnerLayout_>
+    requires BlockMixedLayout<OuterLayout_, InnerLayout_>
+using BlockMixed = BlockMatrxLayout<OuterLayout_, InnerLayout_>;
 
 }  // namespace tilefusion::tile_layout
