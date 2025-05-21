@@ -41,35 +41,33 @@ int2 test_swizzle(int x, int y) {
 }
 }  // namespace
 
-// TEST(TestSwizzle, test_swizzle_function) {
-//     const int kB = 3;
-//     const int kM = 3;
-//     const int kS = 3;
+TEST(TestSwizzle, test_swizzle_function) {
+    const int kB = 3;
+    const int kM = 3;
+    const int kS = 3;
 
-//     int2 swizzled_idx_0_0 = test_swizzle<kB, kM, kS>(0, 0);
-//     int2 swizzled_idx_1_0 = test_swizzle<kB, kM, kS>(1, 0);
-//     int2 swizzled_idx_1_4 = test_swizzle<kB, kM, kS>(1, 4);
-//     int2 swizzled_idx_2_0 = test_swizzle<kB, kM, kS>(2, 0);
-//     int2 swizzled_idx_2_4 = test_swizzle<kB, kM, kS>(2, 4);
+    int2 swizzled_idx_0_0 = test_swizzle<kB, kM, kS>(0, 0);
+    int2 swizzled_idx_1_0 = test_swizzle<kB, kM, kS>(1, 0);
+    int2 swizzled_idx_1_4 = test_swizzle<kB, kM, kS>(1, 4);
+    int2 swizzled_idx_2_0 = test_swizzle<kB, kM, kS>(2, 0);
+    int2 swizzled_idx_2_4 = test_swizzle<kB, kM, kS>(2, 4);
 
-//     EXPECT_EQ(swizzled_idx_0_0.x, swizzled_idx_0_0.y);
-//     EXPECT_EQ(swizzled_idx_1_0.x, swizzled_idx_1_0.y);
-//     EXPECT_EQ(swizzled_idx_1_4.x, swizzled_idx_1_4.y);
-//     EXPECT_EQ(swizzled_idx_2_0.x, swizzled_idx_2_0.y);
-//     EXPECT_EQ(swizzled_idx_2_4.x, swizzled_idx_2_4.y);
-// }
+    EXPECT_EQ(swizzled_idx_0_0.x, swizzled_idx_0_0.y);
+    EXPECT_EQ(swizzled_idx_1_0.x, swizzled_idx_1_0.y);
+    EXPECT_EQ(swizzled_idx_1_4.x, swizzled_idx_1_4.y);
+    EXPECT_EQ(swizzled_idx_2_0.x, swizzled_idx_2_0.y);
+    EXPECT_EQ(swizzled_idx_2_4.x, swizzled_idx_2_4.y);
+}
 
 TEST(TestSwizzle, test_swizzled_layout) {
-    using AtomLayout = SwizzledLayout<tl::RowMajor<8, 64>, Swizzle<3, 3, 3>>;
-    AtomLayout atom_layout;
-    // atom_layout.dump();
+    using BlockRowMajor = tl::BlockRowMajor<
+        tl::RowMajor<16, 64>,
+        SwizzledLayout<tl::RowMajor<8, 64>, Swizzle<3, 3, 3>>>;
 
-    // for (int i = 0; i < AtomLayout::kRows; ++i) {
-    //     for (int j = 0; j < AtomLayout::kCols; ++j) {
-    //         printf("%d, ", atom_layout(i, j));
-    //     }
-    //     printf("\n");
-    // }
+#if defined(DEBUG)
+    BlockRowMajor layout;
+    layout.dump();
+#endif
 }
 
 }  // namespace tilefusion::testing
