@@ -2,8 +2,7 @@
 // Licensed under the MIT License.
 
 #pragma once
-#include "config.hpp"
-#include "cuda_utils.hpp"
+
 #include "traits/base.hpp"
 #include "util/math_utils.hpp"
 
@@ -180,6 +179,18 @@ struct BlockMatrxLayout {
 
     InnerLayout inner_;
 };
+
+/// @brief Pretty printer for BlockMatrxLayout
+template <typename OuterLayout_, typename InnerLayout_>
+static HOST std::ostream& operator<<(
+    std::ostream& out,
+    const BlockMatrxLayout<OuterLayout_, InnerLayout_>& layout) {
+    out << "BlockMatrixLayout {" << std::endl
+        << "    Outer: " << OuterLayout_{} << ", " << std::endl
+        << "    Inner: " << InnerLayout_{} << std::endl
+        << "  }";
+    return out;
+}
 
 template <typename OuterLayout_, typename InnerLayout_>
 concept BlockRowMajorLayout =

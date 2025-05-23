@@ -18,9 +18,12 @@ namespace {
 struct STileIteratorPrettyPrinter {
     template <typename TileIterator>
     static HOST void print(std::ostream& out, const TileIterator& itr) {
-        out << "ChunkShape = (" << TileIterator::kChunkRows << ", "
+        out << "SharedTileItertor {" << std::endl
+            << "  ChunkShape = (" << TileIterator::kChunkRows << ", "
             << TileIterator::kChunkCols << "), stripe count = ("
-            << TileIterator::sc0 << ", " << TileIterator::sc1 << ")";
+            << TileIterator::sc0 << ", " << TileIterator::sc1 << ")"
+            << std::endl
+            << "}";
     }
 };
 }  // namespace

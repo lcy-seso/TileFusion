@@ -3,8 +3,8 @@
 proj_root_dir=$(pwd)
 build_dir="$proj_root_dir/build/temp.linux-x86_64-cpython-312"
 
-# lib_dir="$build_dir/src"
-lib_dir="$proj_root_dir/build/lib.linux-x86_64-cpython-312/tilefusion"
+lib_dir="$build_dir/src"
+# lib_dir="$proj_root_dir/build/lib.linux-x86_64-cpython-312/tilefusion"
 lib_name="libtilefusion.so"
 
 source_lib="$lib_dir/$lib_name"
@@ -32,7 +32,8 @@ cd $build_dir
 # cmake -DCMAKE_BUILD_TYPE=Debug ../../ 2>&1 | tee ../../build.log
 
 # TEST_NAME="test_single_wmma"
-TEST_NAME="test_swizzled_copy"
+# TEST_NAME="test_swizzled_copy"
+TEST_NAME="test_tile_iterator"
 TEST_DIR="$build_dir/tests/cpp"
 TEST_PATH="$TEST_DIR/${TEST_NAME}"
 
