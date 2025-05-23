@@ -39,14 +39,4 @@ struct AccessBase {
     // optimizes the usage of the L1 cache.
     static constexpr int kExpectedSize = kMemTransWidth / kElementBits;
 };
-
-// FIXME(ying): Legacy code, remove it gradually.
-template <typename Element>
-    requires BaseType<Element>
-struct BaseTileShape {
-    static constexpr int kRows = 16;
-    static constexpr int kCols = 16;
-    static constexpr int kNumel = 256 /* kRows * kCols */;
-};
-
 }  // namespace tilefusion::traits
