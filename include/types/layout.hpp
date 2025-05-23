@@ -124,6 +124,7 @@ struct BlockMatrxLayout {
 
     static constexpr int kRows = OuterLayout_::kRows;
     static constexpr int kCols = OuterLayout_::kCols;
+    static constexpr int kNumel = OuterLayout_::kNumel;
 
     static constexpr int kInnerRows = InnerLayout_::kRows;
     static constexpr int kInnerCols = InnerLayout_::kCols;

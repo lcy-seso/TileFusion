@@ -21,19 +21,19 @@ fi
 echo "build dir: $build_dir"
 cd $build_dir
 
-# if [ -f "CMakeCache.txt" ]; then
-#     rm CMakeCache.txt
-# fi
+if [ -f "CMakeCache.txt" ]; then
+    rm CMakeCache.txt
+fi
 
-# if [ -d "CMakeFiles" ]; then
-#     rm -rf CMakeFiles
-# fi
+if [ -d "CMakeFiles" ]; then
+    rm -rf CMakeFiles
+fi
 
-# cmake -DCMAKE_BUILD_TYPE=Debug ../../ 2>&1 | tee ../../build.log
+cmake -DCMAKE_BUILD_TYPE=Debug ../../ 2>&1 | tee ../../build.log
 
 # TEST_NAME="test_single_wmma"
 # TEST_NAME="test_swizzled_copy"
-TEST_NAME="test_tile_iterator"
+TEST_NAME="test_stile_iterator"
 TEST_DIR="$build_dir/tests/cpp"
 TEST_PATH="$TEST_DIR/${TEST_NAME}"
 
