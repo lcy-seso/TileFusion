@@ -141,60 +141,19 @@ struct GTileIteratorTester<Layout_, ChunkShape, tl::Layout::kColMajor> {
         }
     }
 };
-
-__device__ void init_buf(void* buf, int numel) {
-    for (int i = 0; i < numel; ++i) {
-        reinterpret_cast<int*>(buf)[i] = i;
-    }
-}
-
-template <typename Shared, typename SIterator>
-__global__ void test_shared_tile_iterator() {
-    using DType = typename Shared::DType;
-    extern __shared__ __align__(sizeof(double)) unsigned char buf_[];
-    DType* buf = reinterpret_cast<DType*>(buf_);
-
-    init_buf(buf, Shared::kNumel);
-
-    Shared s_tile(buf);
-
-    s_tile.dump_value();
-}
-
 }  // namespace
 
-// TEST(TestGTileIterator, test_row_major) {
-//     using Tester = GTileIteratorTester<tl::RowMajor<4, 9>, TileShape<2, 3>,
-//                                        tl::Layout::kRowMajor>;
-//     Tester tester;
-//     tester();
-// }
+TEST(TestGTileIterator, test_row_major) {
+    using Tester = GTileIteratorTester<tl::RowMajor<4, 9>, TileShape<2, 3>,
+                                       tl::Layout::kRowMajor>;
+    Tester tester;
+    tester();
+}
 
-// TEST(TestGTileIterator, col_major) {
-//     using Tester = GTileIteratorTester<tl::ColMajor<4, 9>, TileShape<2, 3>,
-//                                        tl::Layout::kColMajor>;
-//     Tester tester;
-//     tester();
-// }
-
-TEST(TestSharedTileIterator, row_major) {
-    using InType = __half;
-    static constexpr int kRows = 16;
-    static constexpr int kCols = 64;
-
-    static constexpr int kChunkRows = 8;
-    static constexpr int kChunkCols = 64;
-
-    using SharedLayout = tl::BlockRowMajor<
-        tl::RowMajor<kRows, kCols>,
-        SwizzledLayout<tl::RowMajor<8, 64>, Swizzle<3, 3, 3>>>;
-
-    using Shared = SharedTile<InType, SharedLayout>;
-    using SIterator = STileIterator<Shared, TileShape<kChunkRows, kChunkCols>>;
-
-    LOG(INFO) << std::endl << Shared{} << std::endl;
-    LOG(INFO) << std::endl << SIterator{} << std::endl;
-
-    test_shared_tile_iterator<Shared, SIterator><<<1, 1>>>();
+TEST(TestGTileIterator, col_major) {
+    using Tester = GTileIteratorTester<tl::ColMajor<4, 9>, TileShape<2, 3>,
+                                       tl::Layout::kColMajor>;
+    Tester tester;
+    tester();
 }
 }  // namespace tilefusion::testing

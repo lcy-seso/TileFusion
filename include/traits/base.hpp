@@ -20,7 +20,7 @@ concept HalfType =
     std::is_same_v<Element, __half> || std::is_same_v<Element, __bfloat16>;
 
 /// @brief Architecture-specific magic numbers.
-/// @tparam Element: the data type of the elements.
+/// @param Element: the data type of the elements.
 template <typename Element>
 struct AccessBase {
     // the maximal width of vectorized access.
@@ -38,5 +38,14 @@ struct AccessBase {
     // fetched. Ensuring contiguous threads read contiguous data in memory
     // optimizes the usage of the L1 cache.
     static constexpr int kExpectedSize = kMemTransWidth / kElementBits;
+};
+
+// FIXME(ying): Legacy code, remove it gradually.
+template <typename Element>
+    requires BaseType<Element>
+struct BaseTileShape {
+    static constexpr int kRows = 16;
+    static constexpr int kCols = 16;
+    static constexpr int kNumel = 256 /* kRows * kCols */;
 };
 }  // namespace tilefusion::traits
