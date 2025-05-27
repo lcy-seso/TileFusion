@@ -232,8 +232,6 @@ class STileIterator2 {
         using NewTile = SharedTile<DType, TileLayout>;
 
         const int offset = compute_offset(x, y);
-
-        // printf("offset-(%d, %d) = %d\n", x, y, offset);
         return NewTile(data_ + offset);
     }
 

@@ -104,36 +104,73 @@ TEST(TestSharedTileIterator, col_major) {
     cudaDeviceSynchronize();
 }
 
-// TEST(TestSharedTileIterator, block_row_major) {
-//     using InType = __half;
-//     static constexpr int kRows = 4;
-//     static constexpr int kCols = 16;
+TEST(TestSharedTileIterator, block_row_major) {
+    using InType = __half;
+    static constexpr int kRows = 4;
+    static constexpr int kCols = 16;
 
-//     using SharedLayout =
-//         tl::BlockRowMajor<tl::RowMajor<kRows, kCols>, tl::RowMajor<2, 4>>;
+    static constexpr int kChunkRows = 4;
+    static constexpr int kChunkCols = 8;
 
-//     std::cout << "SharedLayout: " << std::endl << SharedLayout{} <<
-//     std::endl;
+    using SharedLayout =
+        tl::BlockRowMajor<tl::RowMajor<kRows, kCols>, tl::RowMajor<2, 4>>;
 
-//     using Shared = SharedTile<InType, SharedLayout>;
-//     using SIterator = STileIterator2<Shared, TileShape<4, 8>>;
+    std::cout << "SharedLayout: " << std::endl << SharedLayout{} << std::endl;
 
-//     LOG(INFO) << std::endl << Shared{} << std::endl;
-//     LOG(INFO) << std::endl << SIterator{} << std::endl;
+    using Shared = SharedTile<InType, SharedLayout>;
+    using SIterator = STileIterator2<Shared, TileShape<kChunkRows, kChunkCols>>;
 
-//     using SubTileLayout = SubTileLayoutCreator<SharedLayout, 4, 8>;
-//     using Layout = typename SubTileLayout::type;
+    LOG(INFO) << std::endl << Shared{} << std::endl;
+    LOG(INFO) << std::endl << SIterator{} << std::endl;
 
-//     LOG(INFO) << std::endl
-//               << "SubTileLayout: " << std::endl
-//               << Layout{} << std::endl;
+    using SubTileLayout =
+        SubTileLayoutCreator<SharedLayout, kChunkRows, kChunkCols>;
+    using Layout = typename SubTileLayout::type;
 
-//     int shm_size = Shared::kNumel * sizeof(InType);
-//     dim3 blocks(1, 1, 1);
-//     dim3 threads(1, 1, 1);
-//     test_stile_iterator<Shared, SIterator><<<blocks, threads, shm_size>>>();
-//     cudaDeviceSynchronize();
-// }
+    LOG(INFO) << std::endl
+              << "SubTileLayout: " << std::endl
+              << Layout{} << std::endl;
+
+    int shm_size = Shared::kNumel * sizeof(InType);
+    dim3 blocks(1, 1, 1);
+    dim3 threads(1, 1, 1);
+    test_stile_iterator<Shared, SIterator><<<blocks, threads, shm_size>>>();
+    cudaDeviceSynchronize();
+}
+
+TEST(TestSharedTileIterator, block_col_major) {
+    using InType = __half;
+    static constexpr int kRows = 16;
+    static constexpr int kCols = 4;
+
+    static constexpr int kChunkRows = 8;
+    static constexpr int kChunkCols = 4;
+
+    using SharedLayout =
+        tl::BlockColMajor<tl::ColMajor<kRows, kCols>, tl::ColMajor<4, 2>>;
+
+    std::cout << "SharedLayout: " << std::endl << SharedLayout{} << std::endl;
+
+    using Shared = SharedTile<InType, SharedLayout>;
+    using SIterator = STileIterator2<Shared, TileShape<kChunkRows, kChunkCols>>;
+
+    LOG(INFO) << std::endl << Shared{} << std::endl;
+    LOG(INFO) << std::endl << SIterator{} << std::endl;
+
+    using SubTileLayout =
+        SubTileLayoutCreator<SharedLayout, kChunkRows, kChunkCols>;
+    using Layout = typename SubTileLayout::type;
+
+    LOG(INFO) << std::endl
+              << "SubTileLayout: " << std::endl
+              << Layout{} << std::endl;
+
+    int shm_size = Shared::kNumel * sizeof(InType);
+    dim3 blocks(1, 1, 1);
+    dim3 threads(1, 1, 1);
+    test_stile_iterator<Shared, SIterator><<<blocks, threads, shm_size>>>();
+    cudaDeviceSynchronize();
+}
 
 // TEST(TestSharedTileIterator, block_swizzled_row_major) {
 //     using InType = __half;
